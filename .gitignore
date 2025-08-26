@@ -1,0 +1,40 @@
+# Node modules
+node_modules/
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Environment files
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Firebase service account key
+serviceAccountKey.json
+
+# Build / cache
+dist/
+build/
+.cache/
+.tmp/
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# VSCode / IDE settings
+.vscode/
+.idea/
+
+# Nodemon
+nodemon.json
+
+# Coverage reports
+coverage/
+
