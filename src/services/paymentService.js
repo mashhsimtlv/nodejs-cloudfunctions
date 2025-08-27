@@ -35,7 +35,7 @@ class PaymentService {
             const paymentType = metadata.paymentType || "unknown";
             const referredBy = metadata.referredBy || null;
 
-            const userRef = db.collection("users").doc(userId);
+            const userRef = db.collection("app-registered-users").doc(userId);
             const userSnap = await userRef.get();
             if (!userSnap.exists) {
                 logger.warn("Stripe webhook: user not found", { userId });
