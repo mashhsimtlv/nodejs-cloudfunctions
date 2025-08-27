@@ -27,7 +27,6 @@ class PaymentService {
      */
     async saveStripeTransaction(paymentIntent) {
         // try {
-        console.log(paymentIntent , 'payment intent');
             const { metadata, id, amount_received, created } = paymentIntent;
             const userId = metadata.userId;
             const subscriberId = metadata.subscriberId;
@@ -62,7 +61,7 @@ class PaymentService {
 
             // ✅ Pay-As-You-Go external balance update
             if (paymentType === "PayAsYouGo" && subscriberId) {
-                try {
+                // try {
                     await modifyBalanceService(
                         { subscriberId, amount: euroAmount, description: "Stripe Top-Up" },
                         { uid: userId } // pass user context
@@ -72,11 +71,11 @@ class PaymentService {
                         subscriberId,
                         amount: euroAmount,
                     });
-                } catch (err) {
-                    logger.error("Modify balance failed", { subscriberId, error: err.message });
-                    await this.notifyAdminEmail("Telco Balance Update Failed", err.message);
-
-                }
+                // } catch (err) {
+                //     logger.error("Modify balance failed", { subscriberId, error: err.message });
+                //     await this.notifyAdminEmail("Telco Balance Update Failed", err.message);
+                //
+                // }
             }
 
             if (referredBy && !user.referralUsed) {
