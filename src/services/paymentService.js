@@ -82,7 +82,7 @@ class PaymentService {
 
             if (referredBy && !user.referralUsed) {
                 const referrerSnap = await db
-                    .collection("users")
+                    .collection("app-registered-users")
                     .where("referralCode", "==", referredBy)
                     .limit(1)
                     .get();
@@ -101,7 +101,7 @@ class PaymentService {
                                     ? 6
                                     : 5;
 
-                    await db.collection("users").doc(referrerId).update({
+                    await db.collection("app-registered-users").doc(referrerId).update({
                         balance: admin.firestore.FieldValue.increment(refBonus),
                         miles: admin.firestore.FieldValue.increment(600),
                         "referralStats.pendingCount": (refData.referralStats?.pendingCount || 1) - 1,
@@ -178,13 +178,13 @@ class PaymentService {
     }
 
     async addHistory(userId, historyData) {
-        await db.collection("users").doc(userId).update({
+        await db.collection("app-registered-users").doc(userId).update({
             history: admin.firestore.FieldValue.arrayUnion(historyData),
         });
     }
 
     async updateMilesAndTier(userId, milesToAdd) {
-        const userRef = db.collection("users").doc(userId);
+        const userRef = db.collection("app-registered-users").doc(userId);
         await db.runTransaction(async (t) => {
             const snap = await t.get(userRef);
             const data = snap.data();
