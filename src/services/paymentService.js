@@ -62,15 +62,15 @@ class PaymentService {
             // ✅ Pay-As-You-Go external balance update
             if (paymentType === "PayAsYouGo" && subscriberId) {
                 // try {
-                    await modifyBalanceService(
-                        { subscriberId, amount: euroAmount, description: "Stripe Top-Up" },
-                        { uid: userId } // pass user context
-                    );
-                    logger.info("Subscriber balance updated via Telco API", {
-                        userId,
-                        subscriberId,
-                        amount: euroAmount,
-                    });
+                //     await modifyBalanceService(
+                //         { subscriberId, amount: euroAmount, description: "Stripe Top-Up" },
+                //         { uid: userId } // pass user context
+                //     );
+                //     logger.info("Subscriber balance updated via Telco API", {
+                //         userId,
+                //         subscriberId,
+                //         amount: euroAmount,
+                //     });
                 // } catch (err) {
                 //     logger.error("Modify balance failed", { subscriberId, error: err.message });
                 //     await this.notifyAdminEmail("Telco Balance Update Failed", err.message);
