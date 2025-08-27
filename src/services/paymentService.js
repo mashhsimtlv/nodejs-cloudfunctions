@@ -79,7 +79,6 @@ class PaymentService {
             }
 
 
-            console.log(referredBy && !user.referralUsed , "test")
 
             if (referredBy && !user.referralUsed) {
                 const referrerSnap = await db
@@ -134,6 +133,7 @@ class PaymentService {
 
             // ✅ Update miles & tier
             const milesToAdd = Math.floor(amountUSD * 100);
+            console.log(milesToAdd  , 'mildes add')
             await this.updateMilesAndTier(userId, milesToAdd);
 
             await this.addHistory(userId, {
