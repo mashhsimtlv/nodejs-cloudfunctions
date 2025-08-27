@@ -78,6 +78,8 @@ class PaymentService {
                 // }
             }
 
+            console.log(paymentType , 'payment type')
+
             if (referredBy && !user.referralUsed) {
                 const referrerSnap = await db
                     .collection("users")
