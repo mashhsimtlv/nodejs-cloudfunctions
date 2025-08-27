@@ -152,13 +152,13 @@ class PaymentService {
                 paymentType,
             });
 
-            logger.info("Stripe transaction processed successfully", {
-                userId,
-                transactionId: id,
-                amountUSD,
-                credited: euroAmount,
-                bonus: bonusBalance,
-            });
+            // logger.info("Stripe transaction processed successfully", {
+            //     userId,
+            //     transactionId: id,
+            //     amountUSD,
+            //     credited: euroAmount,
+            //     bonus: bonusBalance,
+            // });
         // } catch (err) {
         //     logger.error("saveStripeTransaction error", { error: err.message });
         //
