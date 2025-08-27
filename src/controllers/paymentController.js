@@ -48,7 +48,7 @@ exports.createStripePaymentIntent = async (req, res) => {
  * Handle Stripe Webhooks
  */
 exports.handleStripeWebhook = async (req, res) => {
-    try {
+    // try {
         const event = req.body; // ⚠️ use stripe.webhooks.constructEvent in production
 
         logger.info("Stripe webhook received", { type: event.type });
@@ -64,10 +64,10 @@ exports.handleStripeWebhook = async (req, res) => {
         }
 
         res.send("Webhook received");
-    } catch (err) {
-        logger.error("Stripe webhook failed", { error: err.message });
-        res.status(400).send(`Webhook error: ${err.message}`);
-    }
+    // } catch (err) {
+    //     logger.error("Stripe webhook failed", { error: err.message });
+    //     res.status(400).send(`Webhook error: ${err.message}`);
+    // }
 };
 
 /**
