@@ -2,9 +2,8 @@ const winston = require("winston");
 const axios = require("axios");
 
 const BETTERSTACK_URL = "https://in.logs.betterstack.com";
-const SOURCE_TOKEN = "WfCsYoDMYjuJjbxE3NiASmMY"; // your provided token
+const SOURCE_TOKEN = "WfCsYoDMYjuJjbxE3NiASmMY";
 
-// Custom BetterStack transport
 class BetterStackTransport extends winston.Transport {
     log(info, callback) {
         setImmediate(() => this.emit("logged", info));

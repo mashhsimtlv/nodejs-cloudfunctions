@@ -8,6 +8,14 @@ const axios = require("axios");
  */
 exports.createStripePaymentIntent = async (req, res) => {
     try {
+        const io = req.app.get("io");
+
+        io.emit("payment_event", {
+            provider: "stripe",
+            type: "payment_intent.succeeded",
+            data: {"data": "dsfsfsdf"},
+        });
+
         const { amount, userId, productType, paymentType } = req.body;
 
         if (!amount || typeof amount !== "number") {
@@ -45,8 +53,13 @@ exports.handleStripeWebhook = async (req, res) => {
 
         logger.info("Stripe webhook received", { type: event.type });
 
+
+
+
         if (event.type === "payment_intent.succeeded") {
-            await paymentService.saveStripeTransaction(event.data.object);
+            const paymentIntent = event.data.object;
+
+            await paymentService.saveStripeTransaction(paymentIntent);
             logger.info("Stripe transaction saved", { id: event.data.object.id });
         }
 
