@@ -148,7 +148,7 @@ class PaymentService {
                 userId: metadata.userId || "unknown",
                 amount: amountUSD,
                 transactionId: id,
-                transactionTime: Timestamp.fromMillis(created * 1000),
+                transactionTime: new Date(created * 1000),
                 isUsed: false,
                 provider: "stripe",
                 productType: metadata.productType || "unknown",
