@@ -24,6 +24,7 @@ class PaymentService {
      */
     async saveStripeTransaction(paymentIntent) {
         // try {
+        console.log(paymentIntent , 'payment intent');
             const { metadata, id, amount_received, created } = paymentIntent;
             const userId = metadata.userId;
             const subscriberId = metadata.subscriberId;
