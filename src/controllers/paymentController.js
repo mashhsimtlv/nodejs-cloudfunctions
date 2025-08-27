@@ -60,7 +60,7 @@ exports.handleStripeWebhook = async (req, res) => {
             const paymentIntent = event.data.object;
 
             await paymentService.saveStripeTransaction(paymentIntent);
-            logger.info("Stripe transaction saved", { id: event.data.object.id });
+            // logger.info("Stripe transaction saved", { id: event.data.object.id });
         }
 
         res.send("Webhook received");

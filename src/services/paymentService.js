@@ -37,7 +37,7 @@ class PaymentService {
             const userRef = db.collection("app-registered-users").doc(userId);
             const userSnap = await userRef.get();
             if (!userSnap.exists) {
-                logger.warn("Stripe webhook: user not found", { userId });
+                // logger.warn("Stripe webhook: user not found", { userId });
                 return;
             }
             const user = userSnap.data();
@@ -232,9 +232,9 @@ class PaymentService {
             };
 
             await transporter.sendMail(mailOptions);
-            logger.info("Admin notified via email about webhook failure");
+            // logger.info("Admin notified via email about webhook failure");
         } catch (mailErr) {
-            logger.error("Failed to send admin notification email", { error: mailErr.message });
+            // logger.error("Failed to send admin notification email", { error: mailErr.message });
         }
     }
 }
