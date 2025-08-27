@@ -1,10 +1,13 @@
 const stripe = require("../config/stripe");
-const { db, Timestamp, admin } = require("../config/db");
+const { Timestamp } = require("../config/db");
+
 const { getPayPalAccessToken } = require("../config/paypal");
 const axios = require("axios");
 const logger = require("../helpers/logger"); // BetterStack logger
 const nodemailer = require("nodemailer");
 const {modifyBalanceService} = require("./modifyBalanceService");
+const admin = require('./../helpers/firebase')
+const db = admin.firestore();
 
 class PaymentService {
     /**
