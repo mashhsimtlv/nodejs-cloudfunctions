@@ -241,10 +241,10 @@ class PaymentService {
             const data = snap.data();
             const newMiles = (data?.miles || 0) + milesToAdd;
 
-            let tier = "Silver";
-            if (newMiles >= 5000) tier = "Gold";
-            if (newMiles >= 15000) tier = "Diamond";
-            if (newMiles >= 30000) tier = "VIP";
+            let tier = "silver";
+            if (newMiles >= 5000) tier = "gold";
+            if (newMiles >= 15000) tier = "diamond";
+            if (newMiles >= 30000) tier = "vip";
 
             t.update(userRef, { miles: newMiles, tier });
         });
