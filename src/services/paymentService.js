@@ -179,11 +179,19 @@ class PaymentService {
             const milesToAdd = Math.floor(amountUSD * 100);
             await this.updateMilesAndTier(userId, milesToAdd);
 
+
+
             await this.addHistory(userId, {
                 amount: euroAmount,
-                bonus: bonusBalance,
+                bonus: null,
+                currentBonus: null,
+                dateTime: new Date().toISOString(),
+                isPayAsyouGo: true,
+                isTopup: true,
+                paymentType: "Credit Card",
+                planName: null,
+                referredBy: "",
                 type: "TopUp",
-                timestamp: Date.now(),
             });
 
             await db.collection("transactions").add({
