@@ -160,7 +160,7 @@ class PaymentService {
                 const milesToAdd = Math.floor(amountUSD * 100);
                 await this.updateMilesAndTier(userId, milesToAdd);
 
-                await db.collection("app-registered-users").doc(referrerId).update({
+                await db.collection("app-registered-users").doc(userId).update({
                     balance: admin.firestore.FieldValue.increment(amountUSD),
                 });
 
