@@ -8,6 +8,8 @@ const nodemailer = require("nodemailer");
 const {modifyBalanceService} = require("./modifyBalanceService");
 const admin = require('./../helpers/firebase')
 const db = admin.firestore();
+const iccidService = require("../services/iccidService");
+
 
 class PaymentService {
     /**
@@ -25,9 +27,9 @@ class PaymentService {
     /**
      * Save Stripe Transaction to Firestore & update balances/referrals
      */
-    async saveStripeTransaction(paymentIntent) {
-        // try {
-            const { metadata, id, amount_received, created } = paymentIntent;
+    async saveStripeTransaction(paymentIntent , io) {
+        try {
+            const {metadata, id, amount_received, created} = paymentIntent;
             const userId = metadata.userId;
             const subscriberId = metadata.subscriberId;
             const amountUSD = amount_received / 100;
@@ -37,7 +39,7 @@ class PaymentService {
             const userRef = db.collection("app-registered-users").doc(userId);
             const userSnap = await userRef.get();
             if (!userSnap.exists) {
-                // logger.warn("Stripe webhook: user not found", { userId });
+                // logger.warn("Stripe webhook: user not found", {userId});
                 return;
             }
             const user = userSnap.data();
@@ -48,38 +50,23 @@ class PaymentService {
             // ✅ Coupon bonus
             if (user.couponValue && user.couponValue > 0) {
                 euroAmount += user.couponValue;
-                await userRef.update({ couponValue: 0, couponType: null });
+                await userRef.update({couponValue: 0, couponType: null});
             }
 
             // ✅ Tier bonuses
-            const tierRates = { Silver: 0.05, Gold: 0.07, Diamond: 0.08, VIP: 0.1 };
+            const tierRates = {Silver: 0.05, Gold: 0.07, Diamond: 0.08, VIP: 0.1};
             const rate = tierRates[user.tier] || 0;
             if (amountUSD >= 20 && rate > 0) {
                 bonusBalance = this.usdToEur(amountUSD * rate);
                 euroAmount += bonusBalance;
             }
 
-            // ✅ Pay-As-You-Go external balance update
+            // ✅ Pay-As-You-Go external balance update (if needed)
             if (paymentType === "PayAsYouGo" && subscriberId) {
-                // try {
-                //     await modifyBalanceService(
-                //         { subscriberId, amount: euroAmount, description: "Stripe Top-Up" },
-                //         { uid: userId } // pass user context
-                //     );
-                //     logger.info("Subscriber balance updated via Telco API", {
-                //         userId,
-                //         subscriberId,
-                //         amount: euroAmount,
-                //     });
-                // } catch (err) {
-                //     logger.error("Modify balance failed", { subscriberId, error: err.message });
-                //     await this.notifyAdminEmail("Telco Balance Update Failed", err.message);
-                //
-                // }
+                // Uncomment and connect modifyBalanceService if required
             }
 
-
-
+            // ✅ Referral Bonus
             if (referredBy && !user.referralUsed) {
                 const referrerSnap = await db
                     .collection("app-registered-users")
@@ -126,16 +113,35 @@ class PaymentService {
                     });
 
                     if (refData.fcmToken) {
-                        await this.sendNotification(refData.fcmToken, "Referral Bonus!", "You earned bonus!");
+                        await this.sendNotification(
+                            refData.fcmToken,
+                            "Referral Bonus!",
+                            "You earned bonus!"
+                        );
                     }
                 }
             }
 
-            // ✅ Update miles & tier
+            if (user.isActive === false) {
+                const iccidResult = await iccidService.activeIccid({
+                    uid: userId,
+                    amount: amountUSD,
+                    paymentType,
+                    transactionId: id,
+                });
+
+                // logger.info("ICCID activation attempted after payment", {
+                //     userId,
+                //     transactionId: id,
+                //     iccidResult,
+                // });
+            }
+
+            // ✅ Add miles
             const milesToAdd = Math.floor(amountUSD * 100);
-            console.log(milesToAdd  , 'mildes add')
             await this.updateMilesAndTier(userId, milesToAdd);
 
+            // ✅ Add history
             await this.addHistory(userId, {
                 amount: euroAmount,
                 bonus: bonusBalance,
@@ -143,7 +149,7 @@ class PaymentService {
                 timestamp: Date.now(),
             });
 
-            // ✅ Save transaction record
+            // ✅ Save transaction
             await db.collection("transactions").add({
                 userId: metadata.userId || "unknown",
                 amount: amountUSD,
@@ -155,6 +161,13 @@ class PaymentService {
                 paymentType,
             });
 
+            io.emit("payment_event_"+user.uid, {
+                provider: "stripe",
+                type: "payment_intent.succeeded",
+                data: {"data": "dsfsfsdf"},
+            });
+
+
             // logger.info("Stripe transaction processed successfully", {
             //     userId,
             //     transactionId: id,
@@ -162,12 +175,10 @@ class PaymentService {
             //     credited: euroAmount,
             //     bonus: bonusBalance,
             // });
-        // } catch (err) {
-        //     logger.error("saveStripeTransaction error", { error: err.message });
-        //
-        //     // 🚨 Notify admin if webhook processing failed
-        //     await this.notifyAdminEmail("Stripe Webhook Failure", err.message);
-        // }
+        } catch (err) {
+            // logger.error("saveStripeTransaction error", {error: err.message});
+            // await this.notifyAdminEmail("Stripe Webhook Failure", err.message);
+        }
     }
 
     /**
@@ -237,6 +248,7 @@ class PaymentService {
             // logger.error("Failed to send admin notification email", { error: mailErr.message });
         }
     }
+
 }
 
 module.exports = new PaymentService();

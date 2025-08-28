@@ -10,11 +10,6 @@ exports.createStripePaymentIntent = async (req, res) => {
     try {
         const io = req.app.get("io");
 
-        io.emit("payment_event", {
-            provider: "stripe",
-            type: "payment_intent.succeeded",
-            data: {"data": "dsfsfsdf"},
-        });
 
         const { amount, userId, productType, paymentType } = req.body;
 
@@ -59,7 +54,9 @@ exports.handleStripeWebhook = async (req, res) => {
         if (event.type === "payment_intent.succeeded") {
             const paymentIntent = event.data.object;
 
-            await paymentService.saveStripeTransaction(paymentIntent);
+            const io = req.app.get("io");
+
+            await paymentService.saveStripeTransaction(paymentIntent , io);
             // logger.info("Stripe transaction saved", { id: event.data.object.id });
         }
 
