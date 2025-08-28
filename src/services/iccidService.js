@@ -82,8 +82,7 @@ class IccidService {
                 simtlvToken = await getToken();
             }
 
-            // 2. Build URL
-            const url = `${process.env.TELCOM_URL}ocs-custo/main/v1?token=${simtlvToken}`;
+            const url = `https://ocs-api.telco-vision.com:7443/ocs-custo/main/v1?token=${simtlvToken}`;
 
             const requestData = {
                 getSingleSubscriber: {
