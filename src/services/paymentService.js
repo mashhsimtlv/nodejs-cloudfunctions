@@ -157,6 +157,8 @@ class PaymentService {
                     simtlvToken: simtlvToken
                 });
 
+                console.log(iccidResult , 'iccid result');
+
                 const milesToAdd = Math.floor(amountUSD * 100);
                 await this.updateMilesAndTier(userId, milesToAdd);
 
