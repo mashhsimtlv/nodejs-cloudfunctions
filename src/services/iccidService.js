@@ -40,6 +40,8 @@ class IccidService {
                 iccid: iccidValue,
             });
 
+            console.log(simtlvToken  , 'sim tlv token')
+
             // Call Telco API to activate SIM
             const url = `https://ocs-api.telco-vision.com:7443/ocs-custo/main/v1?token=${simtlvToken}`;
 

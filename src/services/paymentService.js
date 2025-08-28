@@ -124,6 +124,9 @@ class PaymentService {
             if (user.isActive === false) {
                 let simtlvToken = null;
 
+
+                console.log(user.existingUser , 'check existing user')
+
                 if (user.existingUser) {
                     simtlvToken = await getMainToken();
                 } else {
@@ -166,7 +169,6 @@ class PaymentService {
                 timestamp: Date.now(),
             });
 
-            // ✅ Save transaction
             await db.collection("transactions").add({
                 userId: metadata.userId || "unknown",
                 amount: amountUSD,
