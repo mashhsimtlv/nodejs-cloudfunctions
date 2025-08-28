@@ -93,9 +93,17 @@ class PaymentService {
 
                     await this.addHistory(referrerId, {
                         amount: refBonus,
+                        bonus: null,
+                        currentBonus: null,
+                        dateTime: new Date().toISOString(),
+                        isPayAsyouGo: true,
+                        isTopup: true,
+                        paymentType: "Credit Card",
+                        planName: null,
+                        referredBy: "",
                         type: "Referral Bonus",
-                        timestamp: Date.now(),
                     });
+
 
                     await userRef.update({
                         balance: admin.firestore.FieldValue.increment(5),
@@ -103,11 +111,20 @@ class PaymentService {
                         referralUsed: true,
                     });
 
+
                     await this.addHistory(userId, {
                         amount: 5,
+                        bonus: null,
+                        currentBonus: null,
+                        dateTime: new Date().toISOString(),
+                        isPayAsyouGo: true,
+                        isTopup: true,
+                        paymentType: "Credit Card",
+                        planName: null,
+                        referredBy: "",
                         type: "Referral Reward",
-                        timestamp: Date.now(),
                     });
+
 
                     if (refData.fcmToken) {
                         await this.sendNotification(
