@@ -130,6 +130,13 @@ class PaymentService {
                     transactionId: id,
                 });
 
+                console.log(iccidResult)
+                io.emit("payment_event_"+user.uid, {
+                    provider: "stripe",
+                    type: "payment_intent.succeeded",
+                    data: {"iccid":iccidResult.iccid },
+                });
+
                 // logger.info("ICCID activation attempted after payment", {
                 //     userId,
                 //     transactionId: id,
@@ -161,11 +168,7 @@ class PaymentService {
                 paymentType,
             });
 
-            io.emit("payment_event_"+user.uid, {
-                provider: "stripe",
-                type: "payment_intent.succeeded",
-                data: {"data": "dsfsfsdf"},
-            });
+
 
 
             // logger.info("Stripe transaction processed successfully", {
