@@ -166,6 +166,8 @@ class PaymentService {
                     balance: admin.firestore.FieldValue.increment(bonusBalance),
                 });
 
+                console.log(bonusBalance , 'bonus balance')
+
 
 
                 await this.addHistory(userId, {
