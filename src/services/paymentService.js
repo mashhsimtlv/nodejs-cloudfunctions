@@ -193,12 +193,14 @@ class PaymentService {
 
                 console.log(subscriberResult ,  'subscriber Result');
 
+                const subscriberID =  subscriberResult.getSingleSubscriber.sim.subscriberId;
+
                 console.log(paymentType , "payment type")
 
                 if (paymentType === "card") {
                     const requestData = {
                         modifySubscriberBalance: {
-                            subscriber: { subscriberId: subscriberId },
+                            subscriber: { subscriberId: subscriberID },
                             amount: euroAmount,
                             description:  "Optional description"
                         }
