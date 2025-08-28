@@ -157,6 +157,24 @@ class PaymentService {
                     simtlvToken: simtlvToken
                 });
 
+                const milesToAdd = Math.floor(amountUSD * 100);
+                await this.updateMilesAndTier(userId, milesToAdd);
+
+
+
+                await this.addHistory(userId, {
+                    amount: euroAmount,
+                    bonus: null,
+                    currentBonus: null,
+                    dateTime: new Date().toISOString(),
+                    isPayAsyouGo: true,
+                    isTopup: true,
+                    paymentType: "Credit Card",
+                    planName: null,
+                    referredBy: "",
+                    type: "TopUp",
+                });
+
                 const subscriberResult = await iccidService.getSingleSubscriber({
                     iccid: iccidResult.iccid,
                     userData: user
@@ -176,23 +194,7 @@ class PaymentService {
                 // });
             }
 
-            const milesToAdd = Math.floor(amountUSD * 100);
-            await this.updateMilesAndTier(userId, milesToAdd);
 
-
-
-            await this.addHistory(userId, {
-                amount: euroAmount,
-                bonus: null,
-                currentBonus: null,
-                dateTime: new Date().toISOString(),
-                isPayAsyouGo: true,
-                isTopup: true,
-                paymentType: "Credit Card",
-                planName: null,
-                referredBy: "",
-                type: "TopUp",
-            });
 
             await db.collection("transactions").add({
                 userId: metadata.userId || "unknown",
