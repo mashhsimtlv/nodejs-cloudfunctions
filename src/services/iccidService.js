@@ -5,7 +5,7 @@ const db = admin.firestore();
 class IccidService {
     apiBase = "https://app-fb-simtlv.aridar-crm.com/api/firebase";
 
-    async activeIccid({ uid, amount, paymentType, transactionId }) {
+    async activeIccid({ uid, amount, paymentType, transactionId , simtlvToken }) {
         try {
             const iccidSnap = await db
                 .collection("iccids")
@@ -33,11 +33,19 @@ class IccidService {
                 iccid: iccidValue,
             });
 
-            // Call backend API to activate subscriber
-            const response = await axios.post(
-                `${this.apiBase}/modify-subscriber-status`,
-                { iccid: iccidValue }
-            );
+
+
+            const url = `https://ocs-api.telco-vision.com:7443/ocs-custo/main/v1?token=${simtlvToken}`;
+
+            const requestData = {
+                modifySubscriberStatus: {
+                    subscriber: { iccid: iccidValue },
+                    newStatus: "ACTIVE"
+                }
+            };
+            const response = await axios.post(url, requestData, {
+                headers: { "Content-Type": "application/json" }
+            });
 
             console.log(response.data?.data , "server data")
 

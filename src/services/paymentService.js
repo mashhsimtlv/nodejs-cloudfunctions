@@ -9,6 +9,7 @@ const {modifyBalanceService} = require("./modifyBalanceService");
 const admin = require('./../helpers/firebase')
 const db = admin.firestore();
 const iccidService = require("../services/iccidService");
+const {getMainToken, getToken} = require("../helpers/generalSettings");
 
 
 class PaymentService {
@@ -125,11 +126,19 @@ class PaymentService {
             console.log(user.isActive , 'user info')
 
             if (user.isActive === false) {
+                let simtlvToken = null;
+
+                if (user.existingUser) {
+                    simtlvToken = await getMainToken();
+                } else {
+                    simtlvToken = await getToken();
+                }
                 const iccidResult = await iccidService.activeIccid({
                     uid: userId,
                     amount: amountUSD,
                     paymentType,
                     transactionId: id,
+                    simtlvToken: simtlvToken
                 });
 
                 console.log(iccidResult)
