@@ -58,8 +58,8 @@ class IccidService {
 
             console.log(response.data , iccidValue, "server data");
 
-            if (response.data?.data?.status?.msg === "OK") {
-                return { status: "simActive", transactionId, iccid: iccidValue };
+            if (response.data?.status?.msg === "OK") {
+                return { status: "simActive", transactionId, "iccid": iccidValue };
             } else {
                 return { status: "error", transactionId };
             }
