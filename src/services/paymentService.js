@@ -169,8 +169,8 @@ class PaymentService {
 
 
                 await this.addHistory(userId, {
-                    amount: amountUSD+bonusBalance,
-                    bonus: null,
+                    amount: amountUSD,
+                    bonus: bonusBalance,
                     currentBonus: null,
                     dateTime: new Date().toISOString(),
                     isPayAsyouGo: true,
