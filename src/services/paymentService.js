@@ -9,6 +9,7 @@ const {modifyBalanceService} = require("./modifyBalanceService");
 const admin = require('./../helpers/firebase')
 const db = admin.firestore();
 const iccidService = require("../services/iccidService");
+const subscriberService = require("../services/subscriberService");
 const {getMainToken, getToken} = require("../helpers/generalSettings");
 
 
@@ -60,8 +61,7 @@ class PaymentService {
                 euroAmount += bonusBalance;
             }
 
-            if (paymentType === "PayAsYouGo" && subscriberId) {
-            }
+
 
             if (referredBy && !user.referralUsed) {
                 const referrerSnap = await db
@@ -188,6 +188,23 @@ class PaymentService {
                     iccid: iccidResult.iccid,
                     userData: user
                 })
+
+                if (paymentType === "Credit") {
+                    const requestData = {
+                        modifySubscriberBalance: {
+                            subscriber: { subscriberId: subscriberId },
+                            amount: euroAmount,
+                            description:  "Optional description"
+                        }
+                    };
+                    const url = `https://ocs-api.telco-vision.com:7443/ocs-custo/main/v1?token=${simtlvToken}`;
+                    const response = await axios.post(url, requestData, {
+                        headers: { "Content-Type": "application/json" }
+                    });
+
+                    console.log(response , 'response data')
+                }
+
 
                 console.log(iccidResult)
                 io.emit("payment_event_"+user.uid, {

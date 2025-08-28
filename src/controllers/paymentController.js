@@ -10,7 +10,6 @@ exports.createStripePaymentIntent = async (req, res) => {
     try {
         const io = req.app.get("io");
 
-
         const { amount, userId, productType, paymentType } = req.body;
 
         if (!amount || typeof amount !== "number") {
