@@ -122,6 +122,8 @@ class PaymentService {
                 }
             }
 
+            console.log(user.isActive , 'user info')
+
             if (user.isActive === false) {
                 const iccidResult = await iccidService.activeIccid({
                     uid: userId,
