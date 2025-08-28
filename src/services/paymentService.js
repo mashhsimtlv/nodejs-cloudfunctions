@@ -53,7 +53,7 @@ class PaymentService {
                 await userRef.update({couponValue: 0, couponType: null});
             }
 
-            const tierRates = {Silver: 0.05, Gold: 0.07, Diamond: 0.08, VIP: 0.1};
+            const tierRates = {silver: 0.05, gold: 0.07, diamond: 0.08, vip: 0.1};
             const rate = tierRates[user.tier] || 0;
             if (amountUSD >= 20 && rate > 0) {
                 bonusBalance = amountUSD * rate;
