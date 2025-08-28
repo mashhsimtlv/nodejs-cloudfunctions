@@ -48,7 +48,6 @@ class PaymentService {
             let euroAmount = this.usdToEur(amountUSD);
             let bonusBalance = 0;
 
-            // ✅ Coupon bonus
             if (user.couponValue && user.couponValue > 0) {
                 euroAmount += user.couponValue;
                 await userRef.update({couponValue: 0, couponType: null});
@@ -163,11 +162,14 @@ class PaymentService {
                 await db.collection("app-registered-users").doc(userId).update({
                     balance: admin.firestore.FieldValue.increment(amountUSD),
                 });
+                await db.collection("app-registered-users").doc(userId).update({
+                    balance: admin.firestore.FieldValue.increment(bonusBalance),
+                });
 
 
 
                 await this.addHistory(userId, {
-                    amount: euroAmount,
+                    amount: amountUSD+bonusBalance,
                     bonus: null,
                     currentBonus: null,
                     dateTime: new Date().toISOString(),
