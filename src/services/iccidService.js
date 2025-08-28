@@ -56,7 +56,7 @@ class IccidService {
                 headers: { "Content-Type": "application/json" },
             });
 
-            console.log(response.data?.data, "server data");
+            console.log(response.data , iccidValue, "server data");
 
             if (response.data?.data?.status?.msg === "OK") {
                 return { status: "simActive", transactionId, iccid: iccidValue };

@@ -148,6 +148,7 @@ class PaymentService {
                 } else {
                     simtlvToken = await getToken();
                 }
+
                 const iccidResult = await iccidService.activeIccid({
                     uid: userId,
                     amount: amountUSD,
