@@ -3,7 +3,7 @@ const admin = require("./../helpers/firebase");
 const db = admin.firestore();
 
 // Helper functions (you probably have them in another service already)
-const { getUserByUid, getMainToken, getToken } = require("./tokenService");
+const { getMainToken, getToken } = require("./../helpers/generalSettings");
 // ⚠️ replace with your actual token / user service
 
 class IccidService {
