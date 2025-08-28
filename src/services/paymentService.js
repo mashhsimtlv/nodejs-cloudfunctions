@@ -189,6 +189,8 @@ class PaymentService {
                     userData: user
                 })
 
+                console.log(subscriberResult ,  'subscriber Result');
+
                 console.log(paymentType , "payment type")
 
                 if (paymentType === "card") {
