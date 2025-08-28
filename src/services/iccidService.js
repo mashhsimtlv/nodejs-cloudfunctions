@@ -97,7 +97,7 @@ class IccidService {
                 headers: { "Content-Type": "application/json" },
             });
 
-            console.log(response.data , 'single subscriber data');
+            console.log(iccid , response.data , 'single subscriber data');
 
             const {
                 sim: { id, subscriberId, smdpServer, activationCode },
