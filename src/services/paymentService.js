@@ -54,7 +54,6 @@ class PaymentService {
                 await userRef.update({couponValue: 0, couponType: null});
             }
 
-            // ✅ Tier bonuses
             const tierRates = {Silver: 0.05, Gold: 0.07, Diamond: 0.08, VIP: 0.1};
             const rate = tierRates[user.tier] || 0;
             if (amountUSD >= 20 && rate > 0) {
@@ -62,12 +61,9 @@ class PaymentService {
                 euroAmount += bonusBalance;
             }
 
-            // ✅ Pay-As-You-Go external balance update (if needed)
             if (paymentType === "PayAsYouGo" && subscriberId) {
-                // Uncomment and connect modifyBalanceService if required
             }
 
-            // ✅ Referral Bonus
             if (referredBy && !user.referralUsed) {
                 const referrerSnap = await db
                     .collection("app-registered-users")
@@ -141,11 +137,16 @@ class PaymentService {
                     simtlvToken: simtlvToken
                 });
 
+                const subscriberResult = await iccidService.getSingleSubscriber({
+                    iccid: iccidResult.iccid,
+                    userData: user
+                })
+
                 console.log(iccidResult)
                 io.emit("payment_event_"+user.uid, {
                     provider: "stripe",
                     type: "payment_intent.succeeded",
-                    data: {"iccid":iccidResult.iccid },
+                    data: {"iccid":iccidResult.iccid , "smdpServer": subscriberResult?.getSingleSubscriber?.smdpServer },
                 });
 
                 // logger.info("ICCID activation attempted after payment", {
@@ -155,11 +156,9 @@ class PaymentService {
                 // });
             }
 
-            // ✅ Add miles
             const milesToAdd = Math.floor(amountUSD * 100);
             await this.updateMilesAndTier(userId, milesToAdd);
 
-            // ✅ Add history
             await this.addHistory(userId, {
                 amount: euroAmount,
                 bonus: bonusBalance,
@@ -199,7 +198,7 @@ class PaymentService {
      * Convert USD to EUR
      */
     usdToEur(usd) {
-        return +(usd * 0.9).toFixed(2); // simple static conversion
+        return +(usd /1.1).toFixed(2);
     }
 
     async addHistory(userId, historyData) {

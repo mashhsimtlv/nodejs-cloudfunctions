@@ -1,11 +1,18 @@
 const axios = require("axios");
-const admin = require('./../helpers/firebase')
+const admin = require("./../helpers/firebase");
 const db = admin.firestore();
+
+// Helper functions (you probably have them in another service already)
+const { getUserByUid, getMainToken, getToken } = require("./tokenService");
+// ⚠️ replace with your actual token / user service
 
 class IccidService {
     apiBase = "https://app-fb-simtlv.aridar-crm.com/api/firebase";
 
-    async activeIccid({ uid, amount, paymentType, transactionId , simtlvToken }) {
+    /**
+     * Activate ICCID for a user
+     */
+    async activeIccid({ uid, amount, paymentType, transactionId, simtlvToken }) {
         try {
             const iccidSnap = await db
                 .collection("iccids")
@@ -33,21 +40,21 @@ class IccidService {
                 iccid: iccidValue,
             });
 
-
-
+            // Call Telco API to activate SIM
             const url = `https://ocs-api.telco-vision.com:7443/ocs-custo/main/v1?token=${simtlvToken}`;
 
             const requestData = {
                 modifySubscriberStatus: {
                     subscriber: { iccid: iccidValue },
-                    newStatus: "ACTIVE"
-                }
+                    newStatus: "ACTIVE",
+                },
             };
+
             const response = await axios.post(url, requestData, {
-                headers: { "Content-Type": "application/json" }
+                headers: { "Content-Type": "application/json" },
             });
 
-            console.log(response.data?.data , "server data")
+            console.log(response.data?.data, "server data");
 
             if (response.data?.data?.status?.msg === "OK") {
                 return { status: "simActive", transactionId, iccid: iccidValue };
@@ -56,6 +63,63 @@ class IccidService {
             }
         } catch (err) {
             console.error("activeIccid Error:", err.message);
+            return { status: "error", msg: err.message };
+        }
+    }
+
+    /**
+     * Get subscriber details (with SIM info)
+     */
+    async getSingleSubscriber({ iccid, userData }) {
+        try {
+
+            let simtlvToken;
+            if (userData.existingUser) {
+                simtlvToken = await getMainToken();
+            } else {
+                simtlvToken = await getToken();
+            }
+
+            // 2. Build URL
+            const url = `${process.env.TELCOM_URL}ocs-custo/main/v1?token=${simtlvToken}`;
+
+            const requestData = {
+                getSingleSubscriber: {
+                    iccid,
+                    withSimInfo: true,
+                    onlySubsInfo: true,
+                },
+            };
+
+            // 3. Call API
+            const response = await axios.post(url, requestData, {
+                headers: { "Content-Type": "application/json" },
+            });
+
+            const {
+                sim: { id, subscriberId, smdpServer, activationCode },
+                subscriberId: subscriberIdFromResponse,
+                balance,
+                lastMcc,
+            } = response.data.getSingleSubscriber;
+
+            // 4. Return structured result
+            return {
+                status: { code: 0, msg: "OK" },
+                getSingleSubscriber: {
+                    sim: {
+                        id,
+                        subscriberId,
+                        smdpServer,
+                        activationCode,
+                    },
+                    subscriberId: subscriberIdFromResponse,
+                    balance,
+                    lastMcc,
+                },
+            };
+        } catch (err) {
+            console.error("getSingleSubscriber Error:", err.message);
             return { status: "error", msg: err.message };
         }
     }
