@@ -191,7 +191,7 @@ class PaymentService {
 
                 console.log(paymentType , "payment type")
 
-                if (paymentType === "Credit") {
+                if (paymentType === "card") {
                     const requestData = {
                         modifySubscriberBalance: {
                             subscriber: { subscriberId: subscriberId },
