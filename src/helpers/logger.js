@@ -1,12 +1,14 @@
 const winston = require("winston");
 const axios = require("axios");
 
-const BETTERSTACK_URL = "https://in.logs.betterstack.com";
+// Use the endpoint provided for your source
+const BETTERSTACK_URL = "https://s1488664.eu-nbg-2.betterstackdata.com";
 const SOURCE_TOKEN = "WfCsYoDMYjuJjbxE3NiASmMY";
 
 class BetterStackTransport extends winston.Transport {
     log(info, callback) {
         setImmediate(() => this.emit("logged", info));
+
         axios.post(
             BETTERSTACK_URL,
             {
@@ -14,6 +16,7 @@ class BetterStackTransport extends winston.Transport {
                 message: info.message,
                 timestamp: new Date().toISOString(),
                 meta: info.meta || {},
+                source: "node_js_cloud_functions", // optional, adds clarity
             },
             {
                 headers: {
@@ -24,6 +27,7 @@ class BetterStackTransport extends winston.Transport {
         ).catch((err) => {
             console.error("⚠️ BetterStack logging failed:", err.message);
         });
+
         callback();
     }
 }
