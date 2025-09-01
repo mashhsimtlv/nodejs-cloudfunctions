@@ -30,7 +30,7 @@ class PaymentService {
      * Save Stripe Transaction to Firestore & update balances/referrals
      */
     async saveStripeTransaction(paymentIntent , io) {
-        try {
+        // try {
             const {metadata, id, amount_received, created} = paymentIntent;
             const userId = metadata.userId;
             const subscriberId = metadata.subscriberId;
@@ -246,10 +246,10 @@ class PaymentService {
             //     credited: euroAmount,
             //     bonus: bonusBalance,
             // });
-        } catch (err) {
-            // logger.error("saveStripeTransaction error", {error: err.message});
-            // await this.notifyAdminEmail("Stripe Webhook Failure", err.message);
-        }
+        // } catch (err) {
+        //     // logger.error("saveStripeTransaction error", {error: err.message});
+        //     // await this.notifyAdminEmail("Stripe Webhook Failure", err.message);
+        // }
     }
 
     /**
