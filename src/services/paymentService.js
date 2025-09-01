@@ -30,7 +30,7 @@ class PaymentService {
      * Save Stripe Transaction to Firestore & update balances/referrals
      */
     async saveStripeTransaction(paymentIntent , io) {
-        // try {
+        try {
             const {metadata, id, amount_received, created} = paymentIntent;
             const userId = metadata.userId;
             const subscriberId = metadata.subscriberId;
@@ -161,11 +161,11 @@ class PaymentService {
 
 
 
-                // logger.info("ICCID activation attempted after payment", {
-                //     userId,
-                //     transactionId: id,
-                //     iccidResult,
-                // });
+                logger.info("ICCID activation attempted after payment", {
+                    userId,
+                    transactionId: id,
+                    iccidResult,
+                });
             }
 
         let euroAmount = this.usdToEur(amountUSD);
@@ -212,17 +212,17 @@ class PaymentService {
 
 
 
-            // logger.info("Stripe transaction processed successfully", {
-            //     userId,
-            //     transactionId: id,
-            //     amountUSD,
-            //     credited: euroAmount,
-            //     bonus: bonusBalance,
-            // });
-        // } catch (err) {
-        //     // logger.error("saveStripeTransaction error", {error: err.message});
-        //     // await this.notifyAdminEmail("Stripe Webhook Failure", err.message);
-        // }
+            logger.info("Stripe transaction processed successfully", {
+                userId,
+                transactionId: id,
+                amountUSD,
+                credited: euroAmount,
+                bonus: bonusBalance,
+            });
+        } catch (err) {
+            // logger.error("saveStripeTransaction error", {error: err.message});
+            // await this.notifyAdminEmail("Stripe Webhook Failure", err.message);
+        }
     }
 
     /**
