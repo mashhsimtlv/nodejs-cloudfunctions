@@ -164,41 +164,16 @@ class PaymentService {
                 });
 
 
-                const subscriberResult = await iccidService.getSingleSubscriber({
-                    iccid: iccidResult.iccid,
-                    userData: user
-                })
-
-
-                const subscriberID =  subscriberResult.getSingleSubscriber.sim.subscriberId;
-
-
-                    const requestData = {
-                        modifySubscriberBalance: {
-                            subscriber: { subscriberId: subscriberID },
-                            amount: euroAmount,
-                            description:  "Optional description"
-                        }
-                    };
-                    const url = `https://ocs-api.telco-vision.com:7443/ocs-custo/main/v1?token=${simtlvToken}`;
-                    const response = await axios.post(url, requestData, {
-                        headers: { "Content-Type": "application/json" }
-                    });
-
-
-
-                console.log(iccidResult)
-                io.emit("payment_event_"+user.uid, {
-                    provider: "stripe",
-                    type: "payment_intent.succeeded",
-                    data: {"iccid":iccidResult.iccid , "smdpServer": subscriberResult?.getSingleSubscriber?.smdpServer },
-                });
 
                 // logger.info("ICCID activation attempted after payment", {
                 //     userId,
                 //     transactionId: id,
                 //     iccidResult,
                 // });
+            }
+
+            if(user.iccid) {
+                await this.addSimtlvBalance(user.iccid, user , io)
             }
 
             const milesToAdd = Math.floor(amountUSD * 100);
@@ -263,6 +238,38 @@ class PaymentService {
         await db.collection("app-registered-users").doc(userId).update({
             history: admin.firestore.FieldValue.arrayUnion(historyData),
         });
+    }
+
+    async addSimtlvBalance(iccid , user , euroAmount , io) {
+
+        const subscriberResult = await iccidService.getSingleSubscriber({
+            iccid: iccid,
+            userData: user
+        })
+
+        const subscriberID =  subscriberResult.getSingleSubscriber.sim.subscriberId;
+
+
+        const requestData = {
+            modifySubscriberBalance: {
+                subscriber: { subscriberId: subscriberID },
+                amount: euroAmount,
+                description:  "Optional description"
+            }
+        };
+        const url = `https://ocs-api.telco-vision.com:7443/ocs-custo/main/v1?token=${simtlvToken}`;
+        const response = await axios.post(url, requestData, {
+            headers: { "Content-Type": "application/json" }
+        });
+
+        io.emit("payment_event_"+user.uid, {
+            provider: "stripe",
+            type: "payment_intent.succeeded",
+            data: {"iccid": iccid , "smdpServer": subscriberResult?.getSingleSubscriber?.smdpServer },
+        });
+
+        return response.data;
+
     }
 
     async updateMilesAndTier(userId, milesToAdd) {
