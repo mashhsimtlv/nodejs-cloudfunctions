@@ -38,6 +38,14 @@ class PaymentService {
             const paymentType = metadata.paymentType || "unknown";
             const referredBy = metadata.referredBy || null;
 
+
+            const txRef = db.collection("transactions").where("transactionId", "==", id).limit(1);
+            const txSnap = await txRef.get();
+            if (!txSnap.empty) {
+                logger.warn("Duplicate Stripe webhook ignored", { transactionId: id, userId });
+                return;
+            }
+
             const userRef = db.collection("app-registered-users").doc(userId);
             const userSnap = await userRef.get();
             if (!userSnap.exists) {
