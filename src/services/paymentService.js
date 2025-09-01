@@ -151,11 +151,6 @@ class PaymentService {
 
             if (user.isActive === false) {
 
-
-
-
-
-
                 const iccidResult = await iccidService.activeIccid({
                     uid: userId,
                     amount: amountUSD,
@@ -247,6 +242,8 @@ class PaymentService {
             iccid: iccid,
             userData: user
         })
+
+        console.log(subscriberResult , "checking for subscribers Result");
 
         const subscriberID =  subscriberResult.getSingleSubscriber.sim.subscriberId;
 
