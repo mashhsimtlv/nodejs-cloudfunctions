@@ -44,24 +44,32 @@ class PaymentService {
                 // logger.warn("Stripe webhook: user not found", {userId});
                 return;
             }
+
             const user = userSnap.data();
 
+            // Step 1 - Amount Conversion
+
             let euroAmount = this.usdToEur(amountUSD);
+            let usdAmount = amountUSD;
             let bonusBalance = 0;
 
+            // Step 2 - Coupon Value Reset after Used
+
             if (user.couponValue && user.couponValue > 0) {
-                euroAmount += user.couponValue;
+                usdAmount += user.couponValue;
                 await userRef.update({couponValue: 0, couponType: null});
             }
+
+            // Step 3 - Check for Tier
 
             const tierRates = {silver: 0.05, gold: 0.07, diamond: 0.08, vip: 0.1};
             const rate = tierRates[user.tier] || 0;
             if (amountUSD >= 20 && rate > 0) {
                 bonusBalance = amountUSD * rate;
-                euroAmount += bonusBalance;
+                usdAmount += bonusBalance;
             }
 
-
+            // Step 4 - Check for Refferal Usage
 
             if (referredBy && !user.referralUsed) {
                 const referrerSnap = await db
@@ -97,7 +105,7 @@ class PaymentService {
                         dateTime: new Date().toISOString(),
                         isPayAsyouGo: true,
                         isTopup: true,
-                        paymentType: "Credit Card",
+                        paymentType: paymentType,
                         planName: null,
                         referredBy: "",
                         type: "Referral Bonus",
@@ -118,7 +126,7 @@ class PaymentService {
                         dateTime: new Date().toISOString(),
                         isPayAsyouGo: true,
                         isTopup: true,
-                        paymentType: "Credit Card",
+                        paymentType: paymentType,
                         planName: null,
                         referredBy: "",
                         type: "Referral Reward",
@@ -135,13 +143,11 @@ class PaymentService {
                 }
             }
 
-            console.log(user.isActive , 'user info')
 
             if (user.isActive === false) {
                 let simtlvToken = null;
 
 
-                console.log(user.existingUser , 'check existing user')
 
                 if (user.existingUser) {
                     simtlvToken = await getMainToken();
@@ -157,47 +163,16 @@ class PaymentService {
                     simtlvToken: simtlvToken
                 });
 
-                console.log(iccidResult , 'iccid result');
-
-                const milesToAdd = Math.floor(amountUSD * 100);
-                await this.updateMilesAndTier(userId, milesToAdd);
-
-                await db.collection("app-registered-users").doc(userId).update({
-                    balance: admin.firestore.FieldValue.increment(amountUSD),
-                });
-                await db.collection("app-registered-users").doc(userId).update({
-                    balance: admin.firestore.FieldValue.increment(bonusBalance),
-                });
-
-                console.log(bonusBalance , 'bonus balance')
-
-
-
-                await this.addHistory(userId, {
-                    amount: amountUSD,
-                    bonus: bonusBalance,
-                    currentBonus: null,
-                    dateTime: new Date().toISOString(),
-                    isPayAsyouGo: true,
-                    isTopup: true,
-                    paymentType: "Credit Card",
-                    planName: null,
-                    referredBy: "",
-                    type: "TopUp",
-                });
 
                 const subscriberResult = await iccidService.getSingleSubscriber({
                     iccid: iccidResult.iccid,
                     userData: user
                 })
 
-                console.log(subscriberResult ,  'subscriber Result');
 
                 const subscriberID =  subscriberResult.getSingleSubscriber.sim.subscriberId;
 
-                console.log(paymentType , "payment type")
 
-                if (paymentType === "card") {
                     const requestData = {
                         modifySubscriberBalance: {
                             subscriber: { subscriberId: subscriberID },
@@ -210,8 +185,6 @@ class PaymentService {
                         headers: { "Content-Type": "application/json" }
                     });
 
-                    console.log(response , 'response data')
-                }
 
 
                 console.log(iccidResult)
@@ -228,6 +201,28 @@ class PaymentService {
                 // });
             }
 
+            const milesToAdd = Math.floor(amountUSD * 100);
+            await this.updateMilesAndTier(userId, milesToAdd);
+
+            await db.collection("app-registered-users").doc(userId).update({
+                balance: admin.firestore.FieldValue.increment(amountUSD),
+            });
+            await db.collection("app-registered-users").doc(userId).update({
+                balance: admin.firestore.FieldValue.increment(bonusBalance),
+            });
+
+            await this.addHistory(userId, {
+                amount: amountUSD,
+                bonus: bonusBalance,
+                currentBonus: null,
+                dateTime: new Date().toISOString(),
+                isPayAsyouGo: true,
+                isTopup: true,
+                paymentType: paymentType,
+                planName: null,
+                referredBy: "",
+                type: "TopUp",
+            });
 
 
             await db.collection("transactions").add({
