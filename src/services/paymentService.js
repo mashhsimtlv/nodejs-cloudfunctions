@@ -49,7 +49,7 @@ class PaymentService {
 
             // Step 1 - Amount Conversion
 
-            let euroAmount = this.usdToEur(amountUSD);
+
             let usdAmount = amountUSD;
             let bonusBalance = 0;
 
@@ -168,8 +168,10 @@ class PaymentService {
                 // });
             }
 
+        let euroAmount = this.usdToEur(amountUSD);
+
             if(user.iccid) {
-                await this.addSimtlvBalance(user.iccid, user , io , simtlvToken)
+                await this.addSimtlvBalance(user.iccid, user , euroAmount , io , simtlvToken)
             }
 
             const milesToAdd = Math.floor(amountUSD * 100);
