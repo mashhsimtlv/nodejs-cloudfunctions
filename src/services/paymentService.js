@@ -142,18 +142,19 @@ class PaymentService {
                     }
                 }
             }
-
+        let simtlvToken = null;
+        if (user.existingUser) {
+            simtlvToken = await getMainToken();
+        } else {
+            simtlvToken = await getToken();
+        }
 
             if (user.isActive === false) {
-                let simtlvToken = null;
 
 
 
-                if (user.existingUser) {
-                    simtlvToken = await getMainToken();
-                } else {
-                    simtlvToken = await getToken();
-                }
+
+
 
                 const iccidResult = await iccidService.activeIccid({
                     uid: userId,
@@ -173,7 +174,7 @@ class PaymentService {
             }
 
             if(user.iccid) {
-                await this.addSimtlvBalance(user.iccid, user , io)
+                await this.addSimtlvBalance(user.iccid, user , io , simtlvToken)
             }
 
             const milesToAdd = Math.floor(amountUSD * 100);
@@ -240,7 +241,7 @@ class PaymentService {
         });
     }
 
-    async addSimtlvBalance(iccid , user , euroAmount , io) {
+    async addSimtlvBalance(iccid , user , euroAmount , io , simtlvToken) {
 
         const subscriberResult = await iccidService.getSingleSubscriber({
             iccid: iccid,
