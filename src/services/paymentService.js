@@ -255,6 +255,9 @@ class PaymentService {
                 description:  "Optional description"
             }
         };
+
+        console.log(subscriberID , requestData , 'checking for request data');
+
         const url = `https://ocs-api.telco-vision.com:7443/ocs-custo/main/v1?token=${simtlvToken}`;
         const response = await axios.post(url, requestData, {
             headers: { "Content-Type": "application/json" }
