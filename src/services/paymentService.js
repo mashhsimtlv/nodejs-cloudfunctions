@@ -73,6 +73,33 @@ class PaymentService {
                 });
             }
 
+            if (user.nextTopupBonus && user.nextTopupBonus.value) {
+                usdAmount += user.nextTopupBonus.value;
+
+                await userRef.update({
+                    nextTopupBonus: admin.firestore.FieldValue.delete()
+                });
+
+                logger.info("Next topup bonus applied", {
+                    userId,
+                    bonusValue: user.nextTopupBonus.value,
+                    couponCode: user.nextTopupBonus.couponCode,
+                });
+
+                await this.addHistory(userId, {
+                    amount: user.nextTopupBonus.value,
+                    bonus: null,
+                    currentBonus: null,
+                    dateTime: new Date().toISOString(),
+                    isPayAsyouGo: true,
+                    isTopup: true,
+                    paymentType: paymentType,
+                    planName: null,
+                    referredBy: "",
+                    type: "Next Topup Bonus",
+                });
+            }
+
 
             // Step 3 - Check for Tier
 
