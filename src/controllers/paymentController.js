@@ -79,13 +79,8 @@ exports.createPayPalOrder = async (req, res) => {
             paymentType,
         });
 
-        const approvalLink = order.links.find((l) => l.rel === "approve");
 
-        res.json({
-            success: true,
-            orderId: order.id,
-            approvalUrl: approvalLink ? approvalLink.href : null,
-        });
+        return res.json(order );
     // } catch (err) {
     //     logger.error("PayPal order creation failed", { error: err.message });
     //     res.status(500).json({ error: err.message });
