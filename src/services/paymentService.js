@@ -413,8 +413,8 @@ class PaymentService {
     async createPayPalOrder({ amount, currency, userId, productType, paymentType }) {
         const accessToken = await getPayPalAccessToken();
 
-        // ✅ Store metadata inside reference_id (JSON encoded)
-        const referenceData = JSON.stringify({ userId, productType, paymentType });
+        // ✅ Store metadata inside `custom_id` (same as your Cloud Function)
+        const customId = JSON.stringify({ userId, productType, paymentType });
 
         const response = await axios.post(
             `https://api.sandbox.paypal.com/v2/checkout/orders`,
@@ -422,15 +422,36 @@ class PaymentService {
                 intent: "CAPTURE",
                 purchase_units: [
                     {
-                        amount: { currency_code: currency, value: amount.toString() },
-                        reference_id: referenceData,
+                        amount: {
+                            currency_code: currency || "USD",
+                            value: amount?.toString() || "10.00"
+                        },
+                        custom_id: customId,
                     },
                 ],
+                application_context: {
+                    return_url: "https://simtlv-esim.web.app/payment-success.html",
+                    cancel_url: "https://simtlv-esim.web.app/payment-cancel.html",
+                },
             },
-            { headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" } }
+            {
+                headers: {
+                    Authorization: `Bearer ${accessToken}`,
+                    "Content-Type": "application/json"
+                }
+            }
         );
 
-        return response.data;
+        const order = response.data;
+        const approvalLink = order.links.find((link) => link.rel === "approve");
+        const approvalUrl = approvalLink ? approvalLink.href : null;
+
+        // ✅ Return same structure as Firebase function
+        return {
+            success: true,
+            orderId: order.id,
+            approvalUrl,
+        };
     }
 
     // Capture PayPal Order
