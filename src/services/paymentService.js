@@ -443,6 +443,7 @@ class PaymentService {
         );
 
         const order = response.data;
+        console.log(order , "order")
         const approvalLink = order.links.find((link) => link.rel === "approve");
         const approvalUrl = approvalLink ? approvalLink.href : null;
 
