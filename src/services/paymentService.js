@@ -324,7 +324,6 @@ class PaymentService {
             headers: { "Content-Type": "application/json" }
         });
 
-        console.log(subscriberResult , "subscriber result")
 
         const emitPayload = {
             status: {
@@ -344,7 +343,6 @@ class PaymentService {
             }
         };
 
-        console.log(emitPayload , "emit payload")
 
         io.emit("payment_event_" + user.uid, {
             provider: "stripe",
