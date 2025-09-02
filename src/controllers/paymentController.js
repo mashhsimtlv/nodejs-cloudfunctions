@@ -68,7 +68,7 @@ exports.handleStripeWebhook = async (req, res) => {
 
 // Create PayPal Order (already done)
 exports.createPayPalOrder = async (req, res) => {
-    try {
+    // try {
         const { amount, currency, userId, productType, paymentType } = req.body;
 
         const order = await paymentService.createPayPalOrder({
@@ -86,10 +86,10 @@ exports.createPayPalOrder = async (req, res) => {
             orderId: order.id,
             approvalUrl: approvalLink ? approvalLink.href : null,
         });
-    } catch (err) {
-        logger.error("PayPal order creation failed", { error: err.message });
-        res.status(500).json({ error: err.message });
-    }
+    // } catch (err) {
+    //     logger.error("PayPal order creation failed", { error: err.message });
+    //     res.status(500).json({ error: err.message });
+    // }
 };
 
 // Capture PayPal Order
