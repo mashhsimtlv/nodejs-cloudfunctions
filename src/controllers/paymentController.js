@@ -102,19 +102,27 @@ exports.capturePayPalOrder = async (req, res) => {
 
         const capture = result.purchase_units[0].payments.captures[0];
         const transactionId = capture.id;
-        const amount = parseFloat(capture.amount.value);
+        // const amount = parseFloat(capture.amount.value);
+
+    res.json({
+        success: true,
+        transactionId,
+        status: result.status,
+    });
+
+
 
         // Process like Stripe webhook (idempotent)
-        await paymentService.savePayPalTransaction({
-            orderId,
-            transactionId,
-            amount,
-            currency: capture.amount.currency_code,
-            status: capture.status,
-            metadata: result.purchase_units[0].reference_id
-                ? JSON.parse(result.purchase_units[0].reference_id)
-                : {}, // store userId, productType, etc. in reference_id when creating order
-        }, io);
+        // await paymentService.savePayPalTransaction({
+        //     orderId,
+        //     transactionId,
+        //     amount,
+        //     currency: capture.amount.currency_code,
+        //     status: capture.status,
+        //     metadata: result.purchase_units[0].reference_id
+        //         ? JSON.parse(result.purchase_units[0].reference_id)
+        //         : {},
+        // }, io);
 
         res.json({
             success: true,
