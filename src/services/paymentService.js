@@ -31,6 +31,7 @@ class PaymentService {
      */
     async saveStripeTransaction(paymentIntent , io) {
         try {
+            console.log("Stripe webhook started---------------------")
             const {metadata, id, amount_received, created} = paymentIntent;
             const userId = metadata.userId;
             const subscriberId = metadata.subscriberId;
@@ -275,6 +276,8 @@ class PaymentService {
                 credited: euroAmount,
                 bonus: bonusBalance,
             });
+
+            console.log("Stripe webhook ended---------------------")
         } catch (err) {
             // logger.error("saveStripeTransaction error", {error: err.message});
             // await this.notifyAdminEmail("Stripe Webhook Failure", err.message);
