@@ -93,7 +93,7 @@ exports.capturePayPalOrder = async (req, res) => {
         const { orderId } = req.body;
         const io = req.app.get("io");
 
-        console.log(orderId , "order id")
+        console.log(orderId , "order id" , req.body);
 
     console.log("check for paypal")
         const result = await paymentService.capturePayPalOrder(orderId);
