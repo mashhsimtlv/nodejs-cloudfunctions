@@ -71,7 +71,7 @@ class PaymentService {
             if (user.couponValue && user.couponValue > 0 && user.couponType) {
                 console.log("Going to Redeem the coupon for percentageDiscount Previous Amount was "+usdAmount);
                 if (user.couponType === "percentageDiscount") {
-                    usdAmount = usdAmount - (usdAmount * (user.couponValue / 100));
+                    usdAmount = usdAmount + (usdAmount * (user.couponValue / 100));
                 }
 
                 await userRef.update({
