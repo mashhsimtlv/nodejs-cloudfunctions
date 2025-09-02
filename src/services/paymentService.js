@@ -449,18 +449,23 @@ class PaymentService {
     // Save PayPal Transaction (similar to Stripe)
     async savePayPalTransaction(data, io) {
         try {
+            console.log("PayPal transaction started---------------------");
+
             const { transactionId, amount, currency, status, orderId, metadata } = data;
             const userId = metadata?.userId;
             const paymentType = metadata?.paymentType || "paypal";
             const productType = metadata?.productType || "unknown";
+            const referredBy = metadata?.referredBy || null;
 
             // ✅ Prevent duplicate processing
             const txRef = db.collection("transactions").where("transactionId", "==", transactionId).limit(1);
             const txSnap = await txRef.get();
             if (!txSnap.empty) {
-                logger.warn("Duplicate PayPal webhook ignored", { transactionId, userId });
+                logger.warn("Duplicate PayPal transaction ignored", { transactionId, userId });
                 return;
             }
+
+            console.log("User Found for the payment");
 
             // ✅ Fetch user
             const userRef = db.collection("app-registered-users").doc(userId);
@@ -472,38 +477,185 @@ class PaymentService {
 
             const user = userSnap.data();
 
-            // ---- same business logic as Stripe ----
             let usdAmount = amount;
             let bonusBalance = 0;
 
-            // Coupon usage
-            if (user.couponValue && user.couponValue > 0) {
-                usdAmount += user.couponValue;
-                await userRef.update({ couponValue: 0, couponType: null });
+            // Step 2 - Coupon Value Reset after Used
+            if (user.couponValue && user.couponValue > 0 && user.couponType) {
+                console.log("Going to Redeem the coupon for percentageDiscount Previous Amount was " + usdAmount);
+
+                if (user.couponType === "percentageDiscount") {
+                    // Reverse the discount → find original amount
+                    const originalAmount = usdAmount / (1 - (user.couponValue / 100));
+                    usdAmount = originalAmount;
+                }
+
+                await userRef.update({
+                    couponValue: 0,
+                    couponType: null
+                });
+
+                console.log("Coupon Redeemed for percentageDiscount and payment becomes now: " + usdAmount);
             }
 
-            // Tier bonus
+            if (user.nextTopupBonus && user.nextTopupBonus.value) {
+                console.log("Going to Redeem the coupon for NEXT TOPUP Previous Amount was " + usdAmount);
+                usdAmount += user.nextTopupBonus.value;
+
+                await userRef.update({
+                    nextTopupBonus: admin.firestore.FieldValue.delete()
+                });
+
+                logger.info("Next topup bonus applied", {
+                    userId,
+                    bonusValue: user.nextTopupBonus.value,
+                    couponCode: user.nextTopupBonus.couponCode,
+                });
+
+                await this.addHistory(userId, {
+                    amount: user.nextTopupBonus.value,
+                    bonus: 0,
+                    currentBonus: null,
+                    dateTime: new Date().toISOString(),
+                    isPayAsyouGo: true,
+                    isTopup: true,
+                    paymentType,
+                    planName: null,
+                    referredBy: "",
+                    type: "Next Topup Bonus",
+                });
+
+                console.log("Coupon Redeemed for NEXT TOPUP and payment becomes now: " + usdAmount);
+            }
+
+            // Step 3 - Check for Tier
             const tierRates = { silver: 0.05, gold: 0.07, diamond: 0.08, vip: 0.1 };
             const rate = tierRates[user.tier] || 0;
             if (amount >= 20 && rate > 0) {
+                console.log("Tier Rate applying and previous amount was " + usdAmount);
                 bonusBalance = amount * rate;
                 usdAmount += bonusBalance;
+                console.log("Tier Rate applied and amount now " + usdAmount);
             }
 
-            // (Referral logic can be reused here if needed...)
+            // Step 4 - Check for Referral Usage
+            if (referredBy && !user.referralUsed) {
+                console.log("going to apply for referral and referred by " + referredBy + " and referred to " + userId);
+                const referrerSnap = await db
+                    .collection("app-registered-users")
+                    .where("referralCode", "==", referredBy)
+                    .limit(1)
+                    .get();
 
-            // Update balance
+                if (!referrerSnap.empty) {
+                    const referrer = referrerSnap.docs[0];
+                    const referrerId = referrer.id;
+                    const refData = referrer.data();
+
+                    const refBonus =
+                        refData.tier === "VIP" ? 8 :
+                            refData.tier === "Diamond" ? 7 :
+                                refData.tier === "Gold" ? 6 : 5;
+
+                    await db.collection("app-registered-users").doc(referrerId).update({
+                        balance: admin.firestore.FieldValue.increment(refBonus),
+                        miles: admin.firestore.FieldValue.increment(600),
+                        "referralStats.pendingCount": (refData.referralStats?.pendingCount || 1) - 1,
+                    });
+
+                    await this.addHistory(referrerId, {
+                        amount: refBonus,
+                        bonus: 0,
+                        currentBonus: null,
+                        dateTime: new Date().toISOString(),
+                        isPayAsyouGo: true,
+                        isTopup: true,
+                        paymentType,
+                        planName: null,
+                        referredBy: "",
+                        type: "Referral Bonus",
+                    });
+
+                    await userRef.update({
+                        balance: admin.firestore.FieldValue.increment(5),
+                        miles: admin.firestore.FieldValue.increment(600),
+                        referralUsed: true,
+                    });
+
+                    await this.addHistory(userId, {
+                        amount: 5,
+                        bonus: 0,
+                        currentBonus: null,
+                        dateTime: new Date().toISOString(),
+                        isPayAsyouGo: true,
+                        isTopup: true,
+                        paymentType,
+                        planName: null,
+                        referredBy: "",
+                        type: "Referral Reward",
+                    });
+
+                    if (refData.fcmToken) {
+                        await this.sendNotification(
+                            refData.fcmToken,
+                            "Referral Bonus!",
+                            "You earned bonus!"
+                        );
+                    }
+                }
+            }
+
+            // Step 5 - ICCID Activation
+            let simtlvToken = null;
+            if (user.existingUser) {
+                simtlvToken = await getMainToken();
+            } else {
+                simtlvToken = await getToken();
+            }
+
+            if (user.isActive === false) {
+                console.log("activating iccid");
+
+                const iccidResult = await iccidService.activeIccid({
+                    uid: userId,
+                    amount: usdAmount,
+                    paymentType,
+                    transactionId,
+                    simtlvToken,
+                });
+
+                logger.info("ICCID activation attempted after PayPal payment", {
+                    userId,
+                    transactionId,
+                    iccidResult,
+                });
+            }
+
+            // Step 6 - Add SimTLV Balance
+            let euroAmount = this.usdToEur(usdAmount);
+
+            if (user.iccid) {
+                console.log("adding balance in simtlv app and amount in euro is " + euroAmount);
+                await this.addSimtlvBalance(user.iccid, user, euroAmount, io, simtlvToken);
+            }
+
+            // Step 7 - Miles and Tier update
+            const milesToAdd = Math.floor(usdAmount * 100);
+            await this.updateMilesAndTier(userId, milesToAdd);
+
+            // Step 8 - Update balances
             await userRef.update({
-                balance: admin.firestore.FieldValue.increment(amount),
+                balance: admin.firestore.FieldValue.increment(usdAmount),
             });
             await userRef.update({
                 balance: admin.firestore.FieldValue.increment(bonusBalance),
             });
 
-            // Add to history
+            // Step 9 - Add history
             await this.addHistory(userId, {
-                amount,
+                amount: usdAmount,
                 bonus: bonusBalance,
+                currentBonus: null,
                 dateTime: new Date().toISOString(),
                 isPayAsyouGo: true,
                 isTopup: true,
@@ -513,10 +665,10 @@ class PaymentService {
                 type: "TopUp",
             });
 
-            // Save transaction
+            // Step 10 - Save transaction
             await db.collection("transactions").add({
                 userId,
-                amount,
+                amount: usdAmount,
                 transactionId,
                 transactionTime: new Date(),
                 isUsed: false,
@@ -530,13 +682,17 @@ class PaymentService {
             logger.info("PayPal transaction processed successfully", {
                 userId,
                 transactionId,
-                amount,
+                usdAmount,
+                credited: euroAmount,
                 bonus: bonusBalance,
             });
+
+            console.log("PayPal transaction ended---------------------");
         } catch (err) {
             logger.error("savePayPalTransaction error", { error: err.message });
         }
     }
+
 }
 
 module.exports = new PaymentService();
