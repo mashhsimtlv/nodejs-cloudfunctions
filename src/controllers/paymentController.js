@@ -89,7 +89,7 @@ exports.createPayPalOrder = async (req, res) => {
 
 // Capture PayPal Order
 exports.capturePayPalOrder = async (req, res) => {
-    try {
+    // try {
         const { orderId } = req.body;
         const io = req.app.get("io");
 
@@ -116,10 +116,10 @@ exports.capturePayPalOrder = async (req, res) => {
             transactionId,
             status: capture.status,
         });
-    } catch (err) {
-        logger.error("PayPal capture failed", { error: err.message });
-        res.status(500).json({ error: err.message });
-    }
+    // } catch (err) {
+    //     logger.error("PayPal capture failed", { error: err.message });
+    //     res.status(500).json({ error: err.message });
+    // }
 };
 
 // Webhook for PayPal events
