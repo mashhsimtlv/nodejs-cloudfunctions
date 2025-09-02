@@ -463,6 +463,7 @@ class PaymentService {
     // Capture PayPal Order
     async capturePayPalOrder(orderId) {
         const accessToken = await getPayPalAccessToken();
+        console.log(accessToken , "access token")
 
         const response = await axios.post(
             `https://api.sandbox.paypal.com/v2/checkout/orders/${orderId}/capture`,
