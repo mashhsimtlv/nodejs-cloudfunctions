@@ -304,7 +304,6 @@ class PaymentService {
             userData: user
         })
 
-        console.log(subscriberResult , "checking for subscribers Result");
 
         const subscriberID =  subscriberResult.getSingleSubscriber.sim.subscriberId;
 
@@ -317,7 +316,6 @@ class PaymentService {
             }
         };
 
-        console.log(subscriberID , requestData , 'checking for request data');
 
         const url = `https://ocs-api.telco-vision.com:7443/ocs-custo/main/v1?token=${simtlvToken}`;
         const response = await axios.post(url, requestData, {
