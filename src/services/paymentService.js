@@ -443,15 +443,14 @@ class PaymentService {
         );
 
         const order = response.data;
-        console.log("Order object:", order);
-        console.log("Links array:", order.links);
-        console.log("Links isArray?", Array.isArray(order.links));
+
         console.log("First link:", order.links[0]);
 
-        const approvalLink = order.links.find((link) => link.rel === "approve");
-        console.log("Approval link:", approvalLink);
+        const approvalCandidates = Array.isArray(order.links)
+            ? order.links.filter((link) => link.rel === "approve")
+            : [];
 
-        const approvalUrl = approvalLink ? approvalLink.href : null;
+        const approvalUrl = approvalCandidates.length > 0 ? approvalCandidates[0].href : null;
         console.log("Approval URL:", approvalUrl);
 
         return {
