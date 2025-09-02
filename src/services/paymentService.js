@@ -57,18 +57,22 @@ class PaymentService {
 
             const user = userSnap.data();
 
-            // Step 1 - Amount Conversion
-
-
             let usdAmount = amountUSD;
             let bonusBalance = 0;
 
             // Step 2 - Coupon Value Reset after Used
 
-            if (user.couponValue && user.couponValue > 0) {
-                usdAmount += user.couponValue;
-                await userRef.update({couponValue: 0, couponType: null});
+            if (user.couponValue && user.couponValue > 0 && user.couponType) {
+                if (user.couponType === "percentageDiscount") {
+                    usdAmount = usdAmount - (usdAmount * (user.couponValue / 100));
+                }
+
+                await userRef.update({
+                    couponValue: 0,
+                    couponType: null
+                });
             }
+
 
             // Step 3 - Check for Tier
 
