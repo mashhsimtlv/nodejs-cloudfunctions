@@ -99,7 +99,7 @@ class PaymentService {
 
                 await this.addHistory(userId, {
                     amount: user.nextTopupBonus.value,
-                    bonus: null,
+                    bonus: 0,
                     currentBonus: null,
                     dateTime: new Date().toISOString(),
                     isPayAsyouGo: true,
@@ -156,7 +156,7 @@ class PaymentService {
 
                     await this.addHistory(referrerId, {
                         amount: refBonus,
-                        bonus: null,
+                        bonus: 0,
                         currentBonus: null,
                         dateTime: new Date().toISOString(),
                         isPayAsyouGo: true,
@@ -177,7 +177,7 @@ class PaymentService {
 
                     await this.addHistory(userId, {
                         amount: 5,
-                        bonus: null,
+                        bonus: 0,
                         currentBonus: null,
                         dateTime: new Date().toISOString(),
                         isPayAsyouGo: true,
