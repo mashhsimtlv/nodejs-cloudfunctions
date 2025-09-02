@@ -324,11 +324,34 @@ class PaymentService {
             headers: { "Content-Type": "application/json" }
         });
 
-        io.emit("payment_event_"+user.uid, {
+        console.log(subscriberResult , "subscriber result")
+
+        const emitPayload = {
+            status: {
+                code: 200,
+                msg: "Success"
+            },
+            getSingleSubscriber: {
+                subscriberId: subscriberResult.getSingleSubscriber.subscriberId,
+                balance: subscriberResult.getSingleSubscriber.balance,
+                lastMcc: subscriberResult.getSingleSubscriber.lastMcc,
+                sim: {
+                    id: subscriberResult.getSingleSubscriber.sim.id,
+                    subscriberId: subscriberResult.getSingleSubscriber.sim.subscriberId,
+                    smdpServer: subscriberResult.getSingleSubscriber.sim.smdpServer,
+                    activationCode: subscriberResult.getSingleSubscriber.sim.activationCode
+                }
+            }
+        };
+
+        console.log(emitPayload , "emit payload")
+
+        io.emit("payment_event_" + user.uid, {
             provider: "stripe",
             type: "payment_intent.succeeded",
-            data: {"iccid": iccid , "smdpServer": subscriberResult?.getSingleSubscriber?.smdpServer },
+            data: emitPayload
         });
+
 
         return response.data;
 
