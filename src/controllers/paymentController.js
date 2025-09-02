@@ -90,7 +90,8 @@ exports.createPayPalOrder = async (req, res) => {
 // Capture PayPal Order
 exports.capturePayPalOrder = async (req, res) => {
     // try {
-        const { orderId } = req.body;
+        const orderId = req.body.resource.id;
+
         const io = req.app.get("io");
 
         console.log(orderId , "order id" , req.body);
