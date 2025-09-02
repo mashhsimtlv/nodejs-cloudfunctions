@@ -48,10 +48,12 @@ class PaymentService {
                 return;
             }
 
+            console.log("User Found for the payment")
+
             const userRef = db.collection("app-registered-users").doc(userId);
             const userSnap = await userRef.get();
             if (!userSnap.exists) {
-                // logger.warn("Stripe webhook: user not found", {userId});
+                logger.warn("Stripe webhook: user not found", {userId});
                 return;
             }
 
@@ -62,7 +64,11 @@ class PaymentService {
 
             // Step 2 - Coupon Value Reset after Used
 
+
+
+
             if (user.couponValue && user.couponValue > 0 && user.couponType) {
+                console.log("Going to Redeem the coupon for percentageDiscount Previous Amount was "+usdAmount);
                 if (user.couponType === "percentageDiscount") {
                     usdAmount = usdAmount - (usdAmount * (user.couponValue / 100));
                 }
@@ -71,9 +77,11 @@ class PaymentService {
                     couponValue: 0,
                     couponType: null
                 });
+                console.log("Coupon Redeemed for percentageDiscount and payment becomes now: "+ usdAmount);
             }
 
             if (user.nextTopupBonus && user.nextTopupBonus.value) {
+                console.log("Going to Redeem the coupon for NEXT TOPUP Previous Amount was "+usdAmount);
                 usdAmount += user.nextTopupBonus.value;
 
                 await userRef.update({
@@ -98,6 +106,7 @@ class PaymentService {
                     referredBy: "",
                     type: "Next Topup Bonus",
                 });
+                console.log("Coupon Redeemed for NEXT TOPUP and payment becomes now: "+ usdAmount);
             }
 
 
@@ -106,13 +115,16 @@ class PaymentService {
             const tierRates = {silver: 0.05, gold: 0.07, diamond: 0.08, vip: 0.1};
             const rate = tierRates[user.tier] || 0;
             if (amountUSD >= 20 && rate > 0) {
+                console.log("Tier Rate applying and previous amount was "+usdAmount);
                 bonusBalance = amountUSD * rate;
                 usdAmount += bonusBalance;
+                console.log("Tier Rate applied and amount now "+usdAmount);
             }
 
             // Step 4 - Check for Refferal Usage
 
             if (referredBy && !user.referralUsed) {
+                console.log("going to apply for referal and reffered by "+referredBy+" and reffered to "+userId );
                 const referrerSnap = await db
                     .collection("app-registered-users")
                     .where("referralCode", "==", referredBy)
@@ -192,6 +204,8 @@ class PaymentService {
 
             if (user.isActive === false) {
 
+                console.log("activating iccid")
+
                 const iccidResult = await iccidService.activeIccid({
                     uid: userId,
                     amount: usdAmount,
@@ -212,6 +226,7 @@ class PaymentService {
         let euroAmount = this.usdToEur(usdAmount);
 
             if(user.iccid) {
+                console.log("adding balance in simtlv app and amount in euro is " + euroAmount)
                 await this.addSimtlvBalance(user.iccid, user , euroAmount , io , simtlvToken)
             }
 
