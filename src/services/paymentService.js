@@ -475,7 +475,7 @@ class PaymentService {
 
     // Save PayPal Transaction (similar to Stripe)
     async savePayPalTransaction(data, io) {
-        try {
+        // try {
             console.log("PayPal transaction started---------------------");
 
             const { transactionId, amount, currency, status, orderId, metadata } = data;
@@ -715,9 +715,9 @@ class PaymentService {
             });
 
             console.log("PayPal transaction ended---------------------");
-        } catch (err) {
-            logger.error("savePayPalTransaction error", { error: err.message });
-        }
+        // } catch (err) {
+        //     logger.error("savePayPalTransaction error", { error: err.message });
+        // }
     }
 
 }
