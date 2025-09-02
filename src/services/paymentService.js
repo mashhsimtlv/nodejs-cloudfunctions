@@ -443,17 +443,16 @@ class PaymentService {
         );
 
         const order = response.data;
-        console.log("PayPal order response:", order);
-        console.log("Order.links type:", typeof order.links, Array.isArray(order.links));
-
-        if (!order || !Array.isArray(order.links)) {
-            throw new Error("PayPal order response is missing links");
-        }
-
-
+        console.log("Order object:", order);
+        console.log("Links array:", order.links);
+        console.log("Links isArray?", Array.isArray(order.links));
+        console.log("First link:", order.links[0]);
 
         const approvalLink = order.links.find((link) => link.rel === "approve");
+        console.log("Approval link:", approvalLink);
+
         const approvalUrl = approvalLink ? approvalLink.href : null;
+        console.log("Approval URL:", approvalUrl);
 
         return {
             success: true,
