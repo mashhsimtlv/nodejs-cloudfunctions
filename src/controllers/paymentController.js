@@ -66,9 +66,7 @@ exports.handleStripeWebhook = async (req, res) => {
     // }
 };
 
-/**
- * Create PayPal Order
- */
+// Create PayPal Order (already done)
 exports.createPayPalOrder = async (req, res) => {
     try {
         const { amount, currency, userId, productType, paymentType } = req.body;
@@ -83,14 +81,6 @@ exports.createPayPalOrder = async (req, res) => {
 
         const approvalLink = order.links.find((l) => l.rel === "approve");
 
-        logger.info("PayPal order created", {
-            orderId: order.id,
-            userId,
-            amount,
-            productType,
-            paymentType,
-        });
-
         res.json({
             success: true,
             orderId: order.id,
@@ -102,34 +92,72 @@ exports.createPayPalOrder = async (req, res) => {
     }
 };
 
-/**
- * Capture PayPal Order
- */
+// Capture PayPal Order
 exports.capturePayPalOrder = async (req, res) => {
     try {
         const { orderId } = req.body;
+        const io = req.app.get("io");
 
         const result = await paymentService.capturePayPalOrder(orderId);
 
-        const transactionId =
-            result.purchase_units[0].payments.captures[0].id;
+        const capture = result.purchase_units[0].payments.captures[0];
+        const transactionId = capture.id;
+        const amount = parseFloat(capture.amount.value);
 
-        logger.info("PayPal order captured", {
+        // Process like Stripe webhook (idempotent)
+        await paymentService.savePayPalTransaction({
             orderId,
             transactionId,
-            status: result.status,
-        });
+            amount,
+            currency: capture.amount.currency_code,
+            status: capture.status,
+            metadata: result.purchase_units[0].reference_id
+                ? JSON.parse(result.purchase_units[0].reference_id)
+                : {}, // store userId, productType, etc. in reference_id when creating order
+        }, io);
 
         res.json({
             success: true,
             transactionId,
-            status: result.status,
+            status: capture.status,
         });
     } catch (err) {
         logger.error("PayPal capture failed", { error: err.message });
         res.status(500).json({ error: err.message });
     }
 };
+
+// Webhook for PayPal events
+exports.handlePayPalWebhook = async (req, res) => {
+    try {
+        const event = req.body;
+
+        logger.info("PayPal webhook received", { eventType: event.event_type });
+
+        if (event.event_type === "PAYMENT.CAPTURE.COMPLETED") {
+            const capture = event.resource;
+            const transactionId = capture.id;
+            const amount = parseFloat(capture.amount.value);
+
+            const io = req.app.get("io");
+
+            await paymentService.savePayPalTransaction({
+                orderId: capture.supplementary_data?.related_ids?.order_id,
+                transactionId,
+                amount,
+                currency: capture.amount.currency_code,
+                status: capture.status,
+                metadata: {}, // cannot carry metadata in webhook, so store before
+            }, io);
+        }
+
+        res.status(200).send("Webhook received");
+    } catch (err) {
+        logger.error("PayPal webhook failed", { error: err.message });
+        res.status(400).send(`Webhook error: ${err.message}`);
+    }
+};
+
 
 /**
  * Verify Recent Transaction (Stripe / PayPal)

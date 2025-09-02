@@ -40,8 +40,10 @@ class PaymentService {
 
 
             const txRef = db.collection("transactions").where("transactionId", "==", id).limit(1);
+
             const txSnap = await txRef.get();
-            if (!txSnap.empty) {
+
+            if(!txSnap.empty){
                 logger.warn("Duplicate Stripe webhook ignored", { transactionId: id, userId });
                 return;
             }
@@ -338,6 +340,133 @@ class PaymentService {
         }
     }
 
+    async createPayPalOrder({ amount, currency, userId, productType, paymentType }) {
+        const accessToken = await getPayPalAccessToken();
+
+        // ✅ Store metadata inside reference_id (JSON encoded)
+        const referenceData = JSON.stringify({ userId, productType, paymentType });
+
+        const response = await axios.post(
+            `${process.env.PAYPAL_API_BASE}/v2/checkout/orders`,
+            {
+                intent: "CAPTURE",
+                purchase_units: [
+                    {
+                        amount: { currency_code: currency, value: amount.toString() },
+                        reference_id: referenceData,
+                    },
+                ],
+            },
+            { headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" } }
+        );
+
+        return response.data;
+    }
+
+    // Capture PayPal Order
+    async capturePayPalOrder(orderId) {
+        const accessToken = await getPayPalAccessToken();
+
+        const response = await axios.post(
+            `${process.env.PAYPAL_API_BASE}/v2/checkout/orders/${orderId}/capture`,
+            {},
+            { headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" } }
+        );
+
+        return response.data;
+    }
+
+    // Save PayPal Transaction (similar to Stripe)
+    async savePayPalTransaction(data, io) {
+        try {
+            const { transactionId, amount, currency, status, orderId, metadata } = data;
+            const userId = metadata?.userId;
+            const paymentType = metadata?.paymentType || "paypal";
+            const productType = metadata?.productType || "unknown";
+
+            // ✅ Prevent duplicate processing
+            const txRef = db.collection("transactions").where("transactionId", "==", transactionId).limit(1);
+            const txSnap = await txRef.get();
+            if (!txSnap.empty) {
+                logger.warn("Duplicate PayPal webhook ignored", { transactionId, userId });
+                return;
+            }
+
+            // ✅ Fetch user
+            const userRef = db.collection("app-registered-users").doc(userId);
+            const userSnap = await userRef.get();
+            if (!userSnap.exists) {
+                logger.warn("PayPal webhook: user not found", { userId });
+                return;
+            }
+
+            const user = userSnap.data();
+
+            // ---- same business logic as Stripe ----
+            let usdAmount = amount;
+            let bonusBalance = 0;
+
+            // Coupon usage
+            if (user.couponValue && user.couponValue > 0) {
+                usdAmount += user.couponValue;
+                await userRef.update({ couponValue: 0, couponType: null });
+            }
+
+            // Tier bonus
+            const tierRates = { silver: 0.05, gold: 0.07, diamond: 0.08, vip: 0.1 };
+            const rate = tierRates[user.tier] || 0;
+            if (amount >= 20 && rate > 0) {
+                bonusBalance = amount * rate;
+                usdAmount += bonusBalance;
+            }
+
+            // (Referral logic can be reused here if needed...)
+
+            // Update balance
+            await userRef.update({
+                balance: admin.firestore.FieldValue.increment(amount),
+            });
+            await userRef.update({
+                balance: admin.firestore.FieldValue.increment(bonusBalance),
+            });
+
+            // Add to history
+            await this.addHistory(userId, {
+                amount,
+                bonus: bonusBalance,
+                dateTime: new Date().toISOString(),
+                isPayAsyouGo: true,
+                isTopup: true,
+                paymentType,
+                planName: null,
+                referredBy: "",
+                type: "TopUp",
+            });
+
+            // Save transaction
+            await db.collection("transactions").add({
+                userId,
+                amount,
+                transactionId,
+                transactionTime: new Date(),
+                isUsed: false,
+                provider: "paypal",
+                productType,
+                paymentType,
+                status,
+                orderId,
+            });
+
+            logger.info("PayPal transaction processed successfully", {
+                userId,
+                transactionId,
+                amount,
+                bonus: bonusBalance,
+            });
+        } catch (err) {
+            logger.error("savePayPalTransaction error", { error: err.message });
+        }
+    }
 }
 
 module.exports = new PaymentService();

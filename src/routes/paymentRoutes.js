@@ -6,5 +6,6 @@ router.post("/stripe/create-intent", paymentController.createStripePaymentIntent
 router.post("/stripe/webhook", express.raw({ type: "application/json" }), paymentController.handleStripeWebhook);
 router.post("/paypal/create-order", paymentController.createPayPalOrder);
 router.post("/paypal/capture-order", paymentController.capturePayPalOrder);
+router.post("/paypal/webhook", express.json({ type: "application/json" }), paymentController.handlePayPalWebhook);
 
 module.exports = router;
