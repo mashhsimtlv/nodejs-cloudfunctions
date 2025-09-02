@@ -163,7 +163,7 @@ class PaymentService {
 
                 const iccidResult = await iccidService.activeIccid({
                     uid: userId,
-                    amount: amountUSD,
+                    amount: usdAmount,
                     paymentType,
                     transactionId: id,
                     simtlvToken: simtlvToken
@@ -178,24 +178,24 @@ class PaymentService {
                 });
             }
 
-        let euroAmount = this.usdToEur(amountUSD);
+        let euroAmount = this.usdToEur(usdAmount);
 
             if(user.iccid) {
                 await this.addSimtlvBalance(user.iccid, user , euroAmount , io , simtlvToken)
             }
 
-            const milesToAdd = Math.floor(amountUSD * 100);
+            const milesToAdd = Math.floor(usdAmount * 100);
             await this.updateMilesAndTier(userId, milesToAdd);
 
             await db.collection("app-registered-users").doc(userId).update({
-                balance: admin.firestore.FieldValue.increment(amountUSD),
+                balance: admin.firestore.FieldValue.increment(usdAmount),
             });
             await db.collection("app-registered-users").doc(userId).update({
                 balance: admin.firestore.FieldValue.increment(bonusBalance),
             });
 
             await this.addHistory(userId, {
-                amount: amountUSD,
+                amount: usdAmount,
                 bonus: bonusBalance,
                 currentBonus: null,
                 dateTime: new Date().toISOString(),
@@ -210,7 +210,7 @@ class PaymentService {
 
             await db.collection("transactions").add({
                 userId: metadata.userId || "unknown",
-                amount: amountUSD,
+                amount: usdAmount,
                 transactionId: id,
                 transactionTime: new Date(created * 1000),
                 isUsed: false,
@@ -225,7 +225,7 @@ class PaymentService {
             logger.info("Stripe transaction processed successfully", {
                 userId,
                 transactionId: id,
-                amountUSD,
+                usdAmount,
                 credited: euroAmount,
                 bonus: bonusBalance,
             });
