@@ -417,7 +417,7 @@ class PaymentService {
         const referenceData = JSON.stringify({ userId, productType, paymentType });
 
         const response = await axios.post(
-            `${process.env.PAYPAL_API_BASE}/v2/checkout/orders`,
+            `https://api.sandbox.paypal.com/v2/checkout/orders`,
             {
                 intent: "CAPTURE",
                 purchase_units: [
@@ -438,7 +438,7 @@ class PaymentService {
         const accessToken = await getPayPalAccessToken();
 
         const response = await axios.post(
-            `${process.env.PAYPAL_API_BASE}/v2/checkout/orders/${orderId}/capture`,
+            `https://api.sandbox.paypal.com/v2/checkout/orders/${orderId}/capture`,
             {},
             { headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" } }
         );
