@@ -444,11 +444,12 @@ class PaymentService {
 
         const order = response.data;
         console.log("PayPal order response:", order);
+        console.log("Order.links type:", typeof order.links, Array.isArray(order.links));
 
         if (!order || !Array.isArray(order.links)) {
             throw new Error("PayPal order response is missing links");
         }
-        console.log("Order.links type:", typeof order.links, Array.isArray(order.links));
+
 
 
         const approvalLink = order.links.find((link) => link.rel === "approve");
