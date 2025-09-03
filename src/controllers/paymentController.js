@@ -107,28 +107,8 @@ exports.capturePayPalOrder = async (req, res) => {
     res.json({
         success: true,
         transactionId,
-        status: result.status,
+        status: capture.status,
     });
-
-
-
-        // Process like Stripe webhook (idempotent)
-        // await paymentService.savePayPalTransaction({
-        //     orderId,
-        //     transactionId,
-        //     amount,
-        //     currency: capture.amount.currency_code,
-        //     status: capture.status,
-        //     metadata: result.purchase_units[0].reference_id
-        //         ? JSON.parse(result.purchase_units[0].reference_id)
-        //         : {},
-        // }, io);
-
-        res.json({
-            success: true,
-            transactionId,
-            status: capture.status,
-        });
     // } catch (err) {
     //     logger.error("PayPal capture failed", { error: err.message });
     //     res.status(500).json({ error: err.message });
@@ -142,7 +122,7 @@ exports.handlePayPalWebhook = async (req, res) => {
 
         logger.info("PayPal webhook received", { eventType: event.event_type });
 
-        if (event.event_type === "PAYMENT.CAPTURE.COMPLETED") {
+        if (event.event_type === "CHECKOUT.ORDER.APPROVED") {
             const capture = event.resource;
             const transactionId = capture.id;
             const amount = parseFloat(capture.amount.value);
