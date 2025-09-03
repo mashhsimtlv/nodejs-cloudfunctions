@@ -493,15 +493,18 @@ class PaymentService {
                 return;
             }
 
-            console.log("User Found for the payment");
+            console.log("Transaction Is not duplicate");
 
             // ✅ Fetch user
             const userRef = db.collection("app-registered-users").doc(userId);
             const userSnap = await userRef.get();
             if (!userSnap.exists) {
                 logger.warn("PayPal webhook: user not found", { userId });
+                console.log("User Not Found for the payment");
                 return;
             }
+
+        console.log("User Found for the payment");
 
             const user = userSnap.data();
 
