@@ -34,7 +34,7 @@ class PaymentService {
             console.log("Stripe webhook started---------------------")
             const {metadata, id, amount_received, created} = paymentIntent;
             const userId = metadata.userId;
-            const subscriberId = metadata.subscriberId;
+            const subscriberId = metadata.subscriberId.test;
             const amountUSD = amount_received / 100;
             const paymentType = metadata.paymentType || "unknown";
             const referredBy = metadata.referredBy || null;
