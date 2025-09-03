@@ -129,6 +129,8 @@ exports.handlePayPalWebhook = async (req, res) => {
 
             const transactionId = capture.id;
             const amount = parseFloat(capture.amount.value);
+            const metadata = JSON.parse(capture.custom_id || "{}");
+
 
             const io = req.app.get("io");
 
@@ -138,7 +140,7 @@ exports.handlePayPalWebhook = async (req, res) => {
                 amount,
                 currency: capture.amount.currency_code,
                 status: capture.status,
-                metadata: {}, // cannot carry metadata in webhook, so store before
+                metadata: metadata,
             }, io);
         }
 
