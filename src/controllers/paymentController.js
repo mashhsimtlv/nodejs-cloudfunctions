@@ -124,6 +124,9 @@ exports.handlePayPalWebhook = async (req, res) => {
 
         if (event.event_type === "PAYMENT.CAPTURE.COMPLETED") {
             const capture = event.resource;
+
+            console.log(capture , 'capture')
+
             const transactionId = capture.id;
             const amount = parseFloat(capture.amount.value);
 
