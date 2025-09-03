@@ -122,12 +122,10 @@ exports.handlePayPalWebhook = async (req, res) => {
 
         logger.info("PayPal webhook received", { eventType: event.event_type });
 
-        if (event.event_type === "CHECKOUT.ORDER.APPROVED") {
-
-            console.log(event.resource.purchase_units.amount , "resource")
+        if (event.event_type === "PAYMENT.CAPTURE.COMPLETED") {
             const capture = event.resource;
             const transactionId = capture.id;
-            const amount = parseFloat(capture.purchase_units?.amount?.value);
+            const amount = parseFloat(capture.amount.value);
 
             const io = req.app.get("io");
 
