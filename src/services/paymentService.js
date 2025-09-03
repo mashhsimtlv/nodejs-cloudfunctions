@@ -217,13 +217,11 @@ class PaymentService {
                     simtlvToken: simtlvToken
                 });
 
-
-
-                logger.info("ICCID activation attempted after payment", {
+                console.log("ICCID activation attempted after payment : ", JSON.stringify({
                     userId,
                     transactionId: id,
                     iccidResult,
-                });
+                }));
             }
 
         let euroAmount = this.usdToEur(usdAmount);
@@ -271,7 +269,7 @@ class PaymentService {
 
 
 
-            logger.info("Stripe transaction processed successfully", {
+            console.log("Stripe transaction processed successfully", {
                 userId,
                 transactionId: id,
                 usdAmount,
@@ -279,10 +277,11 @@ class PaymentService {
                 bonus: bonusBalance,
             });
 
+
             console.log("Stripe webhook ended---------------------")
         } catch (err) {
-            // logger.error("saveStripeTransaction error", {error: err.message});
-            // await this.notifyAdminEmail("Stripe Webhook Failure", err.message);
+            logger.error("saveStripeTransaction error", {error: err.message});
+            await this.notifyAdminEmail("Stripe Webhook Failure", err.message);
         }
     }
 
@@ -386,15 +385,18 @@ class PaymentService {
         try {
             const transporter = nodemailer.createTransport({
                 service: "gmail",
+                port: 587,
+                secure: false,
                 auth: {
                     user: process.env.SMTP_USER || "your-email@gmail.com",
                     pass: process.env.SMTP_PASS || "your-app-password", // app password for Gmail
                 },
+                tls: { rejectUnauthorized: false }
             });
 
             const mailOptions = {
                 from: '"SIMTLV System" <no-reply@simtlv.com>',
-                to: "admin@gmail.com",
+                to: "mashhoodr.rehman@gmail.com",
                 subject,
                 html: `
           <h2>⚠️ Stripe Webhook Processing Failed</h2>
