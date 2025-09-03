@@ -45,12 +45,13 @@ exports.handleStripeWebhook = async (req, res) => {
     // try {
         const event = req.body; // ⚠️ use stripe.webhooks.constructEvent in production
 
-        logger.info("Stripe webhook received", { type: event.type });
+    console.log("Stripe webhook received", { type: event.type });
 
 
 
 
-        if (event.type === "payment_intent.succeeded") {
+
+    if (event.type === "payment_intent.succeeded") {
             const paymentIntent = event.data.object;
 
             const io = req.app.get("io");
@@ -120,7 +121,8 @@ exports.handlePayPalWebhook = async (req, res) => {
     try {
         const event = req.body;
 
-        logger.info("PayPal webhook received", { eventType: event.event_type });
+        console.log("PayPal webhook received", { eventType: event.event_type });
+
 
         if (event.event_type === "PAYMENT.CAPTURE.COMPLETED") {
             const capture = event.resource;

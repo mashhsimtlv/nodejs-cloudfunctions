@@ -396,14 +396,16 @@ class PaymentService {
 
             const mailOptions = {
                 from: '"SIMTLV System" <no-reply@simtlv.com>',
-                to: "mashhoodr.rehman@gmail.com",
+                to: "dor@simtlv.co.il",
+                cc: ["massh@simtlv.co.il" , "rana@simtlv.co.il"],
                 subject,
                 html: `
-          <h2>⚠️ Stripe Webhook Processing Failed</h2>
-          <p><b>Error:</b> ${errorMessage}</p>
-          <p>Timestamp: ${new Date().toISOString()}</p>
-        `,
+      <h2>⚠️ Stripe Webhook Processing Failed</h2>
+      <p><b>Error:</b> ${errorMessage}</p>
+      <p>Timestamp: ${new Date().toISOString()}</p>
+    `,
             };
+
 
             await transporter.sendMail(mailOptions);
             // logger.info("Admin notified via email about webhook failure");
