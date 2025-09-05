@@ -127,8 +127,6 @@ class PaymentService {
 
             // Step 4 - Check for Refferal Usage
 
-            console.log("check for reffered by" , referredBy , "refferal used status" , !user.referralUsed)
-
 
         let simtlvToken = null;
         if (user.existingUser) {
@@ -238,6 +236,8 @@ class PaymentService {
                     console.log("going to add balance")
                     await this.addSimtlvBalance(iccid, user, euroAmountUserRef, io, simtlvToken , "pending");
                     console.log("Balance Added to reffer")
+
+                    console.log(refData , "Refferal User" , refData.iccid)
                     let refIccid = refData.iccid;
 
                     let simtlvRefToken = null;
