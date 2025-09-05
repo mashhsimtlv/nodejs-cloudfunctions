@@ -223,12 +223,15 @@ class PaymentService {
                     transactionId: id,
                     iccidResult,
                 }));
+
+                console.log(iccidResult , "iccid result")
+
                 iccid = iccidResult.iccid;
             }
 
         let euroAmount = this.usdToEur(usdAmount);
 
-            console.log("User checking for iccid" , user , "here is user" ,user.iccid)
+            console.log("User checking for iccid" , user , "here is user" ,user.iccid , "iccid working" ,iccid)
 
             iccid = user.iccid?user.iccid:iccid;
 
