@@ -37,7 +37,7 @@ class PaymentService {
             const subscriberId = metadata.subscriberId;
             const amountUSD = amount_received / 100;
             const paymentType = metadata.paymentType || "unknown";
-            const referredBy = metadata.referredBy || null;
+
 
 
             const txRef = db.collection("transactions").where("transactionId", "==", id).limit(1);
@@ -59,6 +59,7 @@ class PaymentService {
             }
 
             const user = userSnap.data();
+            const referredBy = user.referredBy;
 
             let usdAmount = amountUSD;
             let bonusBalance = 0;
@@ -338,7 +339,8 @@ class PaymentService {
         const emitPayload = {
             status: {
                 code: 200,
-                msg: "Success"
+                msg: "Success",
+                status: "completed"
             },
             getSingleSubscriber: {
                 subscriberId: subscriberResult.getSingleSubscriber.subscriberId,
