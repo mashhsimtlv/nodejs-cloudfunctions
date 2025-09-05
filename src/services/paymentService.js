@@ -59,7 +59,7 @@ class PaymentService {
             }
 
             const user = userSnap.data();
-            const referredBy = user.referredBy;
+            const referredBy = user.referredBy || null;
 
             let usdAmount = amountUSD;
             let bonusBalance = 0;
@@ -126,6 +126,8 @@ class PaymentService {
             }
 
             // Step 4 - Check for Refferal Usage
+
+            console.log("check for reffered by" , referredBy , "refferal used status" , !user.referralUsed)
 
             if (referredBy && !user.referralUsed) {
                 console.log("going to apply for referal and reffered by "+referredBy+" and reffered to "+userId );
@@ -586,6 +588,8 @@ class PaymentService {
                 usdAmount += bonusBalance;
                 console.log("Tier Rate applied and amount now " + usdAmount);
             }
+
+        console.log("check for reffered by" , referredBy , "refferal used status" , !user.referralUsed)
 
             // Step 4 - Check for Referral Usage
             if (referredBy && !user.referralUsed) {
