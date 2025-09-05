@@ -204,6 +204,7 @@ class PaymentService {
         } else {
             simtlvToken = await getToken();
         }
+        let iccid = null;
 
             if (user.isActive === false) {
 
@@ -222,13 +223,18 @@ class PaymentService {
                     transactionId: id,
                     iccidResult,
                 }));
+                iccid = iccidResult.iccid;
             }
 
         let euroAmount = this.usdToEur(usdAmount);
 
             console.log("User checking for iccid" , user , "here is user" ,user.iccid)
 
-            if(user.iccid) {
+            iccid = user.iccid?user.iccid:iccid;
+
+            console.log("now iccid becomes now")
+
+            if(iccid) {
                 console.log("adding balance in simtlv app and amount in euro is " + euroAmount)
                 await this.addSimtlvBalance(user.iccid, user , euroAmount , io , simtlvToken)
             }
