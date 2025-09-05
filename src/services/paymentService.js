@@ -257,11 +257,12 @@ class PaymentService {
 
                         console.log("Balance Added to refferd by")
                         if (refData.fcmToken) {
-                            await this.sendNotification(
-                                refData.fcmToken,
-                                "Referral Bonus!",
-                                "You earned bonus!"
-                            );
+                            console.log("fcm token going to added");
+                            // await this.sendNotification(
+                            //     refData.fcmToken,
+                            //     "Referral Bonus!",
+                            //     "You earned bonus!"
+                            // );
                         }
                     }else{
                         console.log("error: Refferer ICCID not exist" , refData.email);
