@@ -235,7 +235,7 @@ class PaymentService {
 
             iccid = user.iccid?user.iccid:iccid;
 
-            console.log("now iccid becomes now")
+            console.log("now iccid becomes now" , iccid)
 
             if(iccid) {
                 console.log("adding balance in simtlv app and amount in euro is " + euroAmount)
