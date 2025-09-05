@@ -58,6 +58,27 @@ exports.handleStripeWebhook = async (req, res) => {
 
             await paymentService.saveStripeTransaction(paymentIntent , io);
             // logger.info("Stripe transaction saved", { id: event.data.object.id });
+        const payload = {
+            totalPaymentValue: paymentIntent.amount_received / 100, // USD → integer
+            paymentMethod: "stripe",
+            userUid: paymentIntent.metadata.userId || "unknown",
+            firstName: paymentIntent.metadata.firstName || "",
+            lastName: paymentIntent.metadata.lastName || "",
+            userEmail: paymentIntent.metadata.userEmail || "",
+            transactionId: paymentIntent.id,
+            invoiceName: paymentIntent.metadata.invoiceName || "",
+            product: paymentIntent.metadata.productType || "unknown",
+            paymentType: paymentIntent.metadata.paymentType || "stripe",
+        };
+
+        console.log("Posting to n8n webhook:", payload);
+
+        await axios.post(
+            "https://n8n-sys.simtlv.co.il/webhook/21731742-dd24-461c-8c42-9cfafb5064f7",
+            payload,
+            { headers: { "Content-Type": "application/json" } }
+        );
+
         }
 
         res.send("Webhook received");
@@ -144,6 +165,28 @@ exports.handlePayPalWebhook = async (req, res) => {
                 status: capture.status,
                 metadata: metadata,
             }, io);
+
+            const payload = {
+                totalPaymentValue: amount,
+                paymentMethod: "paypal",
+                userUid: metadata.userId || "unknown",
+                firstName: metadata.firstName || "",
+                lastName: metadata.lastName || "",
+                userEmail: metadata.userEmail || "",
+                transactionId: transactionId,
+                invoiceName: metadata.invoiceName || "",
+                product: metadata.productType || "unknown",
+                paymentType: metadata.paymentType || "paypal",
+            };
+
+            console.log("Posting to n8n webhook:", payload);
+
+            await axios.post(
+                "https://n8n-sys.simtlv.co.il/webhook/21731742-dd24-461c-8c42-9cfafb5064f7",
+                payload,
+                { headers: { "Content-Type": "application/json" } }
+            );
+
         }
 
         res.status(200).send("Webhook received");
