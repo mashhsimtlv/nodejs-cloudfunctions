@@ -500,7 +500,7 @@ class PaymentService {
             const userId = metadata?.userId;
             const paymentType = metadata?.paymentType || "paypal";
             const productType = metadata?.productType || "unknown";
-            const referredBy = metadata?.referredBy || null;
+
 
             // ✅ Prevent duplicate processing
             const txRef = db.collection("transactions").where("transactionId", "==", transactionId).limit(1);
@@ -525,6 +525,7 @@ class PaymentService {
 
             const user = userSnap.data();
 
+        const referredBy = user.referredBy || null;
             let usdAmount = amount;
             let bonusBalance = 0;
 
@@ -661,6 +662,8 @@ class PaymentService {
                 simtlvToken = await getToken();
             }
 
+            let iccid=null;
+
             if (user.isActive === false) {
                 console.log("activating iccid");
 
@@ -677,10 +680,13 @@ class PaymentService {
                     transactionId,
                     iccidResult,
                 });
+                iccid = iccidResult.iccid;
             }
 
             // Step 6 - Add SimTLV Balance
             let euroAmount = this.usdToEur(usdAmount);
+
+            iccid = user.iccid?user.iccid:iccid;
 
             if (user.iccid) {
                 console.log("adding balance in simtlv app and amount in euro is " + euroAmount);
