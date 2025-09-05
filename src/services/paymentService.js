@@ -485,6 +485,7 @@ class PaymentService {
         io.emit("payment_event_" + user.uid, {
             provider: "stripe",
             type: "payment_intent.succeeded",
+            iccid: iccid,
             data: emitPayload
         });
 
