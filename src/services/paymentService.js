@@ -161,7 +161,7 @@ class PaymentService {
 
         let euroAmount = this.usdToEur(usdAmount);
 
-            console.log("User checking for iccid" , user , "here is user" ,user.iccid , "iccid working" ,iccid)
+            console.log("User checking for iccid"  , "here is user" ,user.iccid , "iccid working" ,iccid)
 
             iccid = user.iccid?user.iccid:iccid;
 
@@ -235,9 +235,9 @@ class PaymentService {
                     let euroAmountUserRef = this.usdToEur(5);
                     console.log("going to add balance")
                     await this.addSimtlvBalance(iccid, user, euroAmountUserRef, io, simtlvToken , "pending");
-                    console.log("Balance Added to reffer")
+                    console.log("Balance Added to reffereal user")
 
-                    console.log(refData , "Refferal User" , refData.iccid)
+                    console.log("Refferal User" , refData.iccid)
                     let refIccid = refData.iccid;
 
                     let simtlvRefToken = null;
@@ -249,11 +249,13 @@ class PaymentService {
 
                     if(refIccid) {
 
+                        console.log("Going to add balance to refferd by")
+
                         // Reffer Balance Add
                         euroAmountUserRef = this.usdToEur(5);
                         await this.addSimtlvBalance(refIccid, refData, euroAmountUserRef, io, simtlvRefToken , "pending");
 
-
+                        console.log("Balance Added to refferd by")
                         if (refData.fcmToken) {
                             await this.sendNotification(
                                 refData.fcmToken,
