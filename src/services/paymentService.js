@@ -169,34 +169,106 @@ class PaymentService {
 
             console.log("now iccid becomes now" , iccid)
 
-            if(iccid) {
-                console.log("adding balance in simtlv app and amount in euro is " + euroAmount)
-                await this.addSimtlvBalance(iccid, user , euroAmount , io , simtlvToken)
+            if (referredBy && !user.referralUsed) {
+                console.log("going to apply for referal and reffered by "+referredBy+" and reffered to "+userId );
+                const referrerSnap = await db
+                    .collection("app-registered-users")
+                    .where("referralCode", "==", referredBy)
+                    .limit(1)
+                    .get();
+
+                if (!referrerSnap.empty) {
+                    const referrer = referrerSnap.docs[0];
+                    const referrerId = referrer.id;
+                    const refData = referrer.data();
+
+                    const refBonus =
+                        refData.tier === "VIP"
+                            ? 8
+                            : refData.tier === "Diamond"
+                                ? 7
+                                : refData.tier === "Gold"
+                                    ? 6
+                                    : 5;
+
+                    await db.collection("app-registered-users").doc(referrerId).update({
+                        balance: admin.firestore.FieldValue.increment(refBonus),
+                        miles: admin.firestore.FieldValue.increment(600),
+                        "referralStats.pendingCount": (refData.referralStats?.pendingCount || 1) - 1,
+                    });
+
+                    await this.addHistory(referrerId, {
+                        amount: refBonus,
+                        bonus: 0,
+                        currentBonus: null,
+                        dateTime: new Date().toISOString(),
+                        isPayAsyouGo: true,
+                        isTopup: true,
+                        paymentType: paymentType,
+                        planName: null,
+                        referredBy: "",
+                        type: "Referral Bonus",
+                    });
+
+
+                    await userRef.update({
+                        balance: admin.firestore.FieldValue.increment(5),
+                        miles: admin.firestore.FieldValue.increment(600),
+                        referralUsed: true,
+                    });
+
+
+                    await this.addHistory(userId, {
+                        amount: 5,
+                        bonus: 0,
+                        currentBonus: null,
+                        dateTime: new Date().toISOString(),
+                        isPayAsyouGo: true,
+                        isTopup: true,
+                        paymentType: paymentType,
+                        planName: null,
+                        referredBy: "",
+                        type: "Referral Reward",
+                    });
+
+
+                    let euroAmountUserRef = this.usdToEur(5);
+                    console.log("going to add balance")
+                    await this.addSimtlvBalance(iccid, user, euroAmountUserRef, io, simtlvToken , "pending");
+                    console.log("Balance Added to reffer")
+                    let refIccid = refData.iccid;
+
+                    let simtlvRefToken = null;
+                    if (refData.existingUser) {
+                        simtlvRefToken = await getMainToken();
+                    } else {
+                        simtlvRefToken = await getToken();
+                    }
+
+                    if(refIccid) {
+
+                        // Reffer Balance Add
+                        euroAmountUserRef = this.usdToEur(5);
+                        await this.addSimtlvBalance(refIccid, refData, euroAmountUserRef, io, simtlvRefToken , "pending");
+
+
+                        if (refData.fcmToken) {
+                            await this.sendNotification(
+                                refData.fcmToken,
+                                "Referral Bonus!",
+                                "You earned bonus!"
+                            );
+                        }
+                    }else{
+                        console.log("error: Refferer ICCID not exist" , refData.email);
+                    }
+                }
             }
 
-            const milesToAdd = Math.floor(usdAmount * 100);
-            await this.updateMilesAndTier(userId, milesToAdd);
-
-            await db.collection("app-registered-users").doc(userId).update({
-                balance: admin.firestore.FieldValue.increment(usdAmount),
-            });
-            await db.collection("app-registered-users").doc(userId).update({
-                balance: admin.firestore.FieldValue.increment(bonusBalance),
-            });
-
-            await this.addHistory(userId, {
-                amount: usdAmount,
-                bonus: bonusBalance,
-                currentBonus: null,
-                dateTime: new Date().toISOString(),
-                isPayAsyouGo: true,
-                isTopup: true,
-                paymentType: paymentType,
-                planName: null,
-                referredBy: "",
-                type: "TopUp",
-            });
-
+            if(iccid) {
+                console.log("adding balance in simtlv app and amount in euro is " + euroAmount)
+                await this.addSimtlvBalance(iccid, user , euroAmount , io , simtlvToken , "completed")
+            }
 
             if (referredBy && !user.referralUsed) {
                 console.log("going to apply for referal and reffered by "+referredBy+" and reffered to "+userId );
@@ -262,8 +334,9 @@ class PaymentService {
 
 
                     let euroAmountUserRef = this.usdToEur(5);
-                    await this.addSimtlvBalance(iccid, user, euroAmountUserRef, io, simtlvToken);
-
+                    console.log("going to add balance")
+                    await this.addSimtlvBalance(iccid, user, euroAmountUserRef, io, simtlvToken , "pending");
+                    console.log("Balance Added to reffer")
                     let refIccid = refData.iccid;
 
                     let simtlvRefToken = null;
@@ -277,7 +350,7 @@ class PaymentService {
 
                         // Reffer Balance Add
                         euroAmountUserRef = this.usdToEur(5);
-                        await this.addSimtlvBalance(refIccid, refData, euroAmountUserRef, io, simtlvRefToken);
+                        await this.addSimtlvBalance(refIccid, refData, euroAmountUserRef, io, simtlvRefToken , "pending");
 
 
                         if (refData.fcmToken) {
@@ -292,6 +365,32 @@ class PaymentService {
                     }
                 }
             }
+
+            const milesToAdd = Math.floor(usdAmount * 100);
+            await this.updateMilesAndTier(userId, milesToAdd);
+
+            await db.collection("app-registered-users").doc(userId).update({
+                balance: admin.firestore.FieldValue.increment(usdAmount),
+            });
+            await db.collection("app-registered-users").doc(userId).update({
+                balance: admin.firestore.FieldValue.increment(bonusBalance),
+            });
+
+            await this.addHistory(userId, {
+                amount: usdAmount,
+                bonus: bonusBalance,
+                currentBonus: null,
+                dateTime: new Date().toISOString(),
+                isPayAsyouGo: true,
+                isTopup: true,
+                paymentType: paymentType,
+                planName: null,
+                referredBy: "",
+                type: "TopUp",
+            });
+
+
+
 
 
             await db.collection("transactions").add({
@@ -337,7 +436,7 @@ class PaymentService {
         });
     }
 
-    async addSimtlvBalance(iccid , user , euroAmount , io , simtlvToken) {
+    async addSimtlvBalance(iccid , user , euroAmount , io , simtlvToken , status) {
 
         const subscriberResult = await iccidService.getSingleSubscriber({
             iccid: iccid,
@@ -367,7 +466,7 @@ class PaymentService {
             status: {
                 code: 200,
                 msg: "Success",
-                status: "completed"
+                status: status
             },
             getSingleSubscriber: {
                 subscriberId: subscriberResult.getSingleSubscriber.subscriberId,
@@ -650,38 +749,6 @@ class PaymentService {
 
             iccid = user.iccid?user.iccid:iccid;
 
-            if (iccid) {
-                console.log("adding balance in simtlv app and amount in euro is " + euroAmount);
-                await this.addSimtlvBalance(iccid, user, euroAmount, io, simtlvToken);
-            }
-
-            // Step 7 - Miles and Tier update
-            const milesToAdd = Math.floor(usdAmount * 100);
-            await this.updateMilesAndTier(userId, milesToAdd);
-
-            // Step 8 - Update balances
-            await userRef.update({
-                balance: admin.firestore.FieldValue.increment(usdAmount),
-            });
-            await userRef.update({
-                balance: admin.firestore.FieldValue.increment(bonusBalance),
-            });
-
-            // Step 9 - Add history
-            await this.addHistory(userId, {
-                amount: usdAmount,
-                bonus: bonusBalance,
-                currentBonus: null,
-                dateTime: new Date().toISOString(),
-                isPayAsyouGo: true,
-                isTopup: true,
-                paymentType,
-                planName: null,
-                referredBy: "",
-                type: "TopUp",
-            });
-
-
 
         console.log("check for reffered by" , referredBy , "refferal used status" , !user.referralUsed)
 
@@ -744,7 +811,7 @@ class PaymentService {
                 });
                 // User Balance Add
                 let euroAmountUserRef = this.usdToEur(5);
-                await this.addSimtlvBalance(iccid, user, euroAmountUserRef, io, simtlvToken);
+                await this.addSimtlvBalance(iccid, user, euroAmountUserRef, io, simtlvToken , "pending");
 
                 let refIccid = refData.iccid;
 
@@ -759,7 +826,7 @@ class PaymentService {
 
                     // Reffer Balance Add
                     euroAmountUserRef = this.usdToEur(5);
-                    await this.addSimtlvBalance(refIccid, refData, euroAmountUserRef, io, simtlvRefToken);
+                    await this.addSimtlvBalance(refIccid, refData, euroAmountUserRef, io, simtlvRefToken , "pending");
 
 
                     if (refData.fcmToken) {
@@ -774,6 +841,41 @@ class PaymentService {
                 }
             }
         }
+
+            if (iccid) {
+                console.log("adding balance in simtlv app and amount in euro is " + euroAmount);
+                await this.addSimtlvBalance(iccid, user, euroAmount, io, simtlvToken , "completed");
+            }
+
+            // Step 7 - Miles and Tier update
+            const milesToAdd = Math.floor(usdAmount * 100);
+            await this.updateMilesAndTier(userId, milesToAdd);
+
+            // Step 8 - Update balances
+            await userRef.update({
+                balance: admin.firestore.FieldValue.increment(usdAmount),
+            });
+            await userRef.update({
+                balance: admin.firestore.FieldValue.increment(bonusBalance),
+            });
+
+            // Step 9 - Add history
+            await this.addHistory(userId, {
+                amount: usdAmount,
+                bonus: bonusBalance,
+                currentBonus: null,
+                dateTime: new Date().toISOString(),
+                isPayAsyouGo: true,
+                isTopup: true,
+                paymentType,
+                planName: null,
+                referredBy: "",
+                type: "TopUp",
+            });
+
+
+
+
 
             // Step 10 - Save transaction
             await db.collection("transactions").add({
