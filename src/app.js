@@ -7,6 +7,7 @@ const { Server } = require("socket.io");
 const paymentRoutes = require("./routes/paymentRoutes");
 const notificationRoutes = require("./routes/notificationRoutes");
 const subscriberRoutes = require("./routes/subscriberRoutes");
+const woocommerceRoutes = require("./routes/woocommerceRoutes");
 
 require("dotenv").config();
 
@@ -32,6 +33,7 @@ app.use(bodyParser.json());
 app.use("/api/payments", paymentRoutes);
 app.use("/api/notifications", notificationRoutes);
 app.use("/api/subscribers", subscriberRoutes);
+app.use("/api/woocommerce", woocommerceRoutes);
 
 // WebSocket connection
 io.on("connection", (socket) => {

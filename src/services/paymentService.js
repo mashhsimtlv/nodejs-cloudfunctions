@@ -226,6 +226,8 @@ class PaymentService {
 
         let euroAmount = this.usdToEur(usdAmount);
 
+            console.log("User checking for iccid" , user , "here is user" ,user.iccid)
+
             if(user.iccid) {
                 console.log("adding balance in simtlv app and amount in euro is " + euroAmount)
                 await this.addSimtlvBalance(user.iccid, user , euroAmount , io , simtlvToken)
