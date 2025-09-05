@@ -239,7 +239,7 @@ class PaymentService {
 
             if(iccid) {
                 console.log("adding balance in simtlv app and amount in euro is " + euroAmount)
-                await this.addSimtlvBalance(user.iccid, user , euroAmount , io , simtlvToken)
+                await this.addSimtlvBalance(iccid, user , euroAmount , io , simtlvToken)
             }
 
             const milesToAdd = Math.floor(usdAmount * 100);
