@@ -314,7 +314,7 @@ class PaymentService {
                 isPayAsyouGo: true,
                 isTopup: false,
                 paymentType: paymentIntent.metadata.paymentType,
-                planName: packageId,
+                planName: paymentIntent.metadata.planName,
                 referredBy: "",
                 type: "GigaBoost Purchase",
             });
