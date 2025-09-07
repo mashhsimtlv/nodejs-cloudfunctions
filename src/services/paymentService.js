@@ -132,6 +132,33 @@ class PaymentService {
                     await this.notifyAdminEmail("Stripe GigaBoost Failure", err.message);
                 }
 
+                const emitPayload = {
+                    status: {
+                        code: 200,
+                        msg: "Success",
+                        status: status
+                    },
+                    getSingleSubscriber: {
+                        subscriberId: null,
+                        balance: null,
+                        lastMcc: null,
+                        sim: {
+                            id: null,
+                            subscriberId: null,
+                            smdpServer: null,
+                            activationCode: null
+                        }
+                    }
+                };
+
+
+                io.emit("payment_event_" + user.uid, {
+                    provider: "stripe",
+                    type: "payment_intent.succeeded",
+                    iccid: iccid,
+                    data: emitPayload
+                });
+
                 console.log("===== Stripe webhook ended (GigaBoost) =====");
                 return;
             }
@@ -685,6 +712,34 @@ class PaymentService {
                 //     console.log("❌ Error applying GigaBoost package", { error: err.message, userId });
                 //     await this.notifyAdminEmail("PayPal GigaBoost Failure", err.message);
                 // }
+
+
+                const emitPayload = {
+                    status: {
+                        code: 200,
+                        msg: "Success",
+                        status: status
+                    },
+                    getSingleSubscriber: {
+                        subscriberId: null,
+                        balance: null,
+                        lastMcc: null,
+                        sim: {
+                            id: null,
+                            subscriberId: null,
+                            smdpServer: null,
+                            activationCode: null
+                        }
+                    }
+                };
+
+
+                io.emit("payment_event_" + user.uid, {
+                    provider: "stripe",
+                    type: "payment_intent.succeeded",
+                    iccid: iccid,
+                    data: emitPayload
+                });
 
                 console.log("===== PayPal webhook ended (GigaBoost) =====");
                 return;
