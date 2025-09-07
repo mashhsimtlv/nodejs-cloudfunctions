@@ -281,7 +281,7 @@ class PaymentService {
             console.log("Calling affectPackageService...", { iccid, packageId });
 
 
-            const url = `${process.env.TELCOM_URL}ocs-custo/main/v1?token=${simtlvToken}`;
+            const url = `https://ocs-api.telco-vision.com:7443/ocs-custo/main/v1?token=${simtlvToken}`;
             console.log("URL:", url);
 
             const requestData = {
