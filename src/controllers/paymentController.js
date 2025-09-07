@@ -10,6 +10,7 @@ exports.createStripePaymentIntent = async (req, res) => {
     try {
         const io = req.app.get("io");
 
+        console.log(req.body , "req body")
 
 
         const { amount, userId, productType, paymentType , planName , planId } = req.body;
