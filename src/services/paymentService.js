@@ -645,7 +645,7 @@ class PaymentService {
                     existingUser: user.existingUser,
                 });
 
-                try {
+                // try {
                     console.log("Calling affectPackageService with:", { iccid, packageId });
                     await this.affectPackage(iccid, packageId, user , data);
 
@@ -681,10 +681,10 @@ class PaymentService {
                     });
                     console.log("Transaction recorded for GigaBoost PayPal:", { userId, transactionId });
 
-                } catch (err) {
-                    console.log("❌ Error applying GigaBoost package", { error: err.message, userId });
-                    await this.notifyAdminEmail("PayPal GigaBoost Failure", err.message);
-                }
+                // } catch (err) {
+                //     console.log("❌ Error applying GigaBoost package", { error: err.message, userId });
+                //     await this.notifyAdminEmail("PayPal GigaBoost Failure", err.message);
+                // }
 
                 console.log("===== PayPal webhook ended (GigaBoost) =====");
                 return;
