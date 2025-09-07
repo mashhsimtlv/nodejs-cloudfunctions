@@ -18,6 +18,9 @@ class PaymentService {
      * Create Stripe PaymentIntent
      */
     async createStripePaymentIntent({ amount, userId, productType, paymentType , planName , planId }) {
+
+        console.log("Creating StripePaymentIntent here is plan name" , planName);
+
         return await stripe.paymentIntents.create({
             amount,
             currency: "usd",
