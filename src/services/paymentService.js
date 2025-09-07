@@ -92,7 +92,7 @@ class PaymentService {
 
                 try {
                     console.log("Calling affectPackageService with:", { iccid, packageId });
-                    await this.affectPackage(iccid, packageId, user);
+                    await this.affectPackage(iccid, packageId, user , paymentIntent);
 
                     console.log("GigaBoost package applied successfully", { iccid, packageId });
 
@@ -269,15 +269,37 @@ class PaymentService {
     }
 
     // ------------------- Affect Package Method -------------------
-    async affectPackage(iccid, packageId, user, paymentIntent) {
+    async affectPackage(iccid, packageId, user , paymentIntent) {
         console.log("===== AffectPackage started =====", { iccid, packageId, userId: user.uid });
 
         try {
             // Call the actual service
             console.log("Calling affectPackageService...", { iccid, packageId });
-            const listPackage = await affectPackageService(iccid, packageId, user);
 
-            console.log("affectPackageService response received:", listPackage);
+
+            const url = `${process.env.TELCOM_URL}ocs-custo/main/v1?token=${simtlvToken}`;
+            console.log("URL:", url);
+
+            const requestData = {
+                "affectPackageToSubscriber": {
+                    "packageTemplateId": packageId,
+                    "subscriber": {
+                        "iccid": iccid,
+                    }
+                }
+            };
+
+            console.log("Request Body:", JSON.stringify(requestData, null, 2));
+
+
+            const response = await axios.post(url, requestData, {
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                timeout: 30000
+            });
+
+            console.log("affectPackageService response received:", response.data);
 
             // Add history record
             await this.addHistory(user.uid, {
@@ -596,7 +618,7 @@ class PaymentService {
 
                 try {
                     console.log("Calling affectPackageService with:", { iccid, packageId });
-                    await this.affectPackage(iccid, packageId, user);
+                    await this.affectPackage(iccid, packageId, user , data);
 
                     console.log("✅ GigaBoost package applied successfully");
 
