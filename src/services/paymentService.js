@@ -623,7 +623,7 @@ class PaymentService {
                 // Fetch plan from Firestore
                 const planSnap = await db
                     .collection("gigaBoostPlans")
-                    .where("plan_code", "==", planCode)
+                    .where("plan_name", "==", planCode)
                     .limit(1)
                     .get();
 
