@@ -297,7 +297,7 @@ class PaymentService {
     async affectPackage(iccid, packageId, user , paymentIntent) {
         console.log("===== AffectPackage started =====", { iccid, packageId, userId: user.uid });
 
-        try {
+        // try {
             let simtlvToken = user.existingUser ? await getMainToken() : await getToken();
             // Call the actual service
             console.log("Calling affectPackageService...", { iccid, packageId });
@@ -328,31 +328,31 @@ class PaymentService {
             console.log("affectPackageService response received:", response.data);
 
             // Add history record
-            await this.addHistory(user.uid, {
-                amount: (paymentIntent.amount_received / 100), // USD
-                bonus: 0,
-                currentBonus: null,
-                dateTime: new Date().toISOString(),
-                isPayAsyouGo: true,
-                isTopup: false,
-                paymentType: paymentIntent.metadata.paymentType,
-                planName: paymentIntent.metadata.planName,
-                referredBy: "",
-                type: "GigaBoost Purchase",
-            });
-            console.log("History entry added for GigaBoost purchase");
+            // await this.addHistory(user.uid, {
+            //     amount: (paymentIntent.amount_received / 100), // USD
+            //     bonus: 0,
+            //     currentBonus: null,
+            //     dateTime: new Date().toISOString(),
+            //     isPayAsyouGo: true,
+            //     isTopup: false,
+            //     paymentType: paymentIntent.metadata.paymentType,
+            //     planName: paymentIntent.metadata.planName,
+            //     referredBy: "",
+            //     type: "GigaBoost Purchase",
+            // });
+            // console.log("History entry added for GigaBoost purchase");
 
             // Record transaction
-            await db.collection("transactions").add({
-                userId: user.uid,
-                amount: paymentIntent.amount_received / 100,
-                transactionId: paymentIntent.id,
-                transactionTime: new Date(paymentIntent.created * 1000),
-                isUsed: false,
-                provider: "stripe",
-                productType: packageId,
-                paymentType: paymentIntent.metadata.paymentType,
-            });
+            // await db.collection("transactions").add({
+            //     userId: user.uid,
+            //     amount: paymentIntent.amount_received / 100,
+            //     transactionId: paymentIntent.id,
+            //     transactionTime: new Date(paymentIntent.created * 1000),
+            //     isUsed: false,
+            //     provider: "stripe",
+            //     productType: packageId,
+            //     paymentType: paymentIntent.metadata.paymentType,
+            // });
             console.log("Transaction saved for GigaBoost:", {
                 userId: user.uid,
                 transactionId: paymentIntent.id,
