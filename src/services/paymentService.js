@@ -554,6 +554,9 @@ class PaymentService {
 
             // ------------------- STEP 1: Extract Data & Metadata -------------------
             const { transactionId, amount, currency, status, orderId, metadata } = data;
+
+            console.log("meta data" , metadata)
+
             const userId = metadata?.userId;
             const paymentType = metadata?.paymentType || "paypal";
             const productType = metadata?.productType || "unknown";
