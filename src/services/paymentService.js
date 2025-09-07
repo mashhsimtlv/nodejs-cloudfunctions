@@ -276,6 +276,7 @@ class PaymentService {
         console.log("===== AffectPackage started =====", { iccid, packageId, userId: user.uid });
 
         try {
+            let simtlvToken = user.existingUser ? await getMainToken() : await getToken();
             // Call the actual service
             console.log("Calling affectPackageService...", { iccid, packageId });
 
@@ -337,7 +338,7 @@ class PaymentService {
             });
 
             console.log("===== AffectPackage completed successfully =====", { iccid, packageId });
-            return listPackage;
+            return response.data;
         } catch (error) {
             console.log("❌ Error in affectPackage", {
                 error: error.message,
