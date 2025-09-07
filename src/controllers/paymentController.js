@@ -98,6 +98,8 @@ exports.createPayPalOrder = async (req, res) => {
     // try {
         const { amount, currency, userId, productType, paymentType , planName, planId } = req.body;
 
+        console.log(req.body , "req body for paypal ")
+
         const order = await paymentService.createPayPalOrder({
             amount,
             currency,
