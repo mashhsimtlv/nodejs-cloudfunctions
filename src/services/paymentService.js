@@ -70,13 +70,13 @@ class PaymentService {
                 console.log("Step 3 → Processing GigaBoost payment");
 
                 const iccid = user.iccid; // from app-registered-users
-                const planCode = metadata.planCode; // ✅ planCode must be in Stripe metadata
+                const planCode = metadata.planName; // ✅ planCode must be in Stripe metadata
                 console.log("Looking up GigaBoost plan:", planCode);
 
                 // Fetch plan from Firestore
                 const planSnap = await db
                     .collection("gigaBoostPlans")
-                    .where("plan_code", "==", planCode)
+                    .where("plan_name", "==", planCode)
                     .limit(1)
                     .get();
 
@@ -531,7 +531,7 @@ class PaymentService {
             const userId = metadata?.userId;
             const paymentType = metadata?.paymentType || "paypal";
             const productType = metadata?.productType || "unknown";
-            const planCode = metadata?.planCode || null; // ✅ for GigaBoost
+            const planCode = metadata?.planName || null; // ✅ for GigaBoost
 
             console.log("Step 1 → Extracted PayPal data:", {
                 userId,
