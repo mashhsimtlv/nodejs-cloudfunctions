@@ -264,6 +264,28 @@ class PaymentService {
                 bonus: bonusBalance,
             });
 
+            const payload = {
+                totalPaymentValue: paymentIntent.amount_received / 100, // USD → integer
+                paymentMethod: "stripe",
+                userUid: user.uid || "unknown",
+                firstName: user.firstName || "",
+                lastName: user.lastName || "",
+                userEmail: user.email || "",
+                transactionId: paymentIntent.id,
+                invoiceName: paymentIntent.metadata.invoiceName || "",
+                product: paymentIntent.metadata.productType || "unknown",
+                paymentType: paymentIntent.metadata.paymentType || "stripe",
+            };
+
+            console.log("Posting to n8n webhook:", payload);
+
+            await axios.post(
+                "https://n8n-sys.simtlv.co.il/webhook/21731742-dd24-461c-8c42-9cfafb5064f7",
+                payload,
+                { headers: { "Content-Type": "application/json" } }
+            );
+
+
             console.log("===== Stripe webhook ended =====");
         } catch (err) {
             console.log("❌ saveStripeTransaction error", { error: err.message });
@@ -798,6 +820,28 @@ class PaymentService {
                 credited: euroAmount,
                 bonus: bonusBalance,
             });
+
+
+            const payload = {
+                totalPaymentValue: data.amount, // USD → integer
+                paymentMethod: "stripe",
+                userUid: user.uid || "unknown",
+                firstName: user.firstName || "",
+                lastName: user.lastName || "",
+                userEmail: user.email || "",
+                transactionId: data.id,
+                invoiceName: data.metadata.invoiceName || "",
+                product: data.metadata.productType || "unknown",
+                paymentType: data.metadata.paymentType || "stripe",
+            };
+
+            console.log("Posting to n8n webhook:", payload);
+
+            await axios.post(
+                "https://n8n-sys.simtlv.co.il/webhook/21731742-dd24-461c-8c42-9cfafb5064f7",
+                payload,
+                { headers: { "Content-Type": "application/json" } }
+            );
 
             console.log("===== PayPal transaction ended =====");
         } catch (err) {
