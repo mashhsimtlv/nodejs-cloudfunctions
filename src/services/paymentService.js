@@ -136,7 +136,7 @@ class PaymentService {
                     status: {
                         code: 200,
                         msg: "Success",
-                        status: status
+                        status: "completed"
                     },
                     getSingleSubscriber: {
                         subscriberId: null,
