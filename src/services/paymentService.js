@@ -297,7 +297,7 @@ class PaymentService {
     async affectPackage(iccid, packageId, user , paymentIntent) {
         console.log("===== AffectPackage started =====", { iccid, packageId, userId: user.uid });
 
-        // try {
+        try {
             let simtlvToken = user.existingUser ? await getMainToken() : await getToken();
             // Call the actual service
             console.log("Calling affectPackageService...", { iccid, packageId });
