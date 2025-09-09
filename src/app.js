@@ -24,10 +24,6 @@ const io = new Server(server, {
     }
 });
 
-app.use(
-    "/api/payments/stripe/webhook",
-    express.raw({ type: "application/json" })
-);
 
 // Store io globally (so controllers can use it)
 app.set("io", io);
