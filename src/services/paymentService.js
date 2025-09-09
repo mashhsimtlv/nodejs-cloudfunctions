@@ -1011,7 +1011,9 @@ class PaymentService {
             await this.updateMilesAndTier(userId, milesToAdd);
 
             // ------------------- STEP 11: Update User Balance -------------------
+
             console.log("Incrementing user balance:", { usdAmount, bonusBalance });
+
             await userRef.update({
                 balance: admin.firestore.FieldValue.increment(usdAmount),
             });
