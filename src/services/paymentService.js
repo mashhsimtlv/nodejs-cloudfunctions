@@ -253,7 +253,76 @@ class PaymentService {
             // ------------------- STEP 7: Referral Bonus -------------------
             if (referredBy && !user.referralUsed) {
                 console.log("Referral detected → applying bonus for", { referredBy, userId });
-                // (Your existing referral logic here, add console logs inside it)
+                console.log("going to apply for referal and reffered by "+referredBy+" and reffered to "+userId );
+                const referrerSnap = await db
+                    .collection("app-registered-users")
+                    .where("referralCode", "==", referredBy)
+                    .limit(1)
+                    .get();
+
+                if (!referrerSnap.empty) {
+                    const referrer = referrerSnap.docs[0];
+                    const referrerId = referrer.id;
+                    const refData = referrer.data();
+
+                    const refBonus =
+                        refData.tier === "VIP"
+                            ? 8
+                            : refData.tier === "Diamond"
+                                ? 7
+                                : refData.tier === "Gold"
+                                    ? 6
+                                    : 5;
+
+                    await db.collection("app-registered-users").doc(referrerId).update({
+                        balance: admin.firestore.FieldValue.increment(refBonus),
+                        miles: admin.firestore.FieldValue.increment(600),
+                        "referralStats.pendingCount": (refData.referralStats?.pendingCount || 1) - 1,
+                    });
+
+                    await this.addHistory(referrerId, {
+                        amount: refBonus,
+                        bonus: null,
+                        currentBonus: null,
+                        dateTime: new Date().toISOString(),
+                        isPayAsyouGo: true,
+                        isTopup: true,
+                        paymentType: paymentType,
+                        planName: null,
+                        referredBy: "",
+                        type: "Referral Bonus",
+                    });
+
+
+                    await userRef.update({
+                        balance: admin.firestore.FieldValue.increment(5),
+                        miles: admin.firestore.FieldValue.increment(600),
+                        referralUsed: true,
+                    });
+
+
+                    await this.addHistory(userId, {
+                        amount: 5,
+                        bonus: null,
+                        currentBonus: null,
+                        dateTime: new Date().toISOString(),
+                        isPayAsyouGo: true,
+                        isTopup: true,
+                        paymentType: paymentType,
+                        planName: null,
+                        referredBy: "",
+                        type: "Referral Reward",
+                    });
+
+
+                    if (refData.fcmToken) {
+                        await this.sendNotification(
+                            refData.fcmToken,
+                            "Referral Bonus!",
+                            "You earned bonus!"
+                        );
+                    }
+                }
             }
 
             // ------------------- STEP 8: Add Balance to ICCID -------------------
@@ -858,7 +927,75 @@ class PaymentService {
             console.log("Checking referral status:", { referredBy, referralUsed: user.referralUsed });
             if (referredBy && !user.referralUsed) {
                 console.log("Referral detected → applying for", { referredBy, userId });
-                // (referral logic kept same, add your existing console logs inside)
+                const referrerSnap = await db
+                    .collection("app-registered-users")
+                    .where("referralCode", "==", referredBy)
+                    .limit(1)
+                    .get();
+
+                if (!referrerSnap.empty) {
+                    const referrer = referrerSnap.docs[0];
+                    const referrerId = referrer.id;
+                    const refData = referrer.data();
+
+                    const refBonus =
+                        refData.tier === "VIP"
+                            ? 8
+                            : refData.tier === "Diamond"
+                                ? 7
+                                : refData.tier === "Gold"
+                                    ? 6
+                                    : 5;
+
+                    await db.collection("app-registered-users").doc(referrerId).update({
+                        balance: admin.firestore.FieldValue.increment(refBonus),
+                        miles: admin.firestore.FieldValue.increment(600),
+                        "referralStats.pendingCount": (refData.referralStats?.pendingCount || 1) - 1,
+                    });
+
+                    await this.addHistory(referrerId, {
+                        amount: refBonus,
+                        bonus: null,
+                        currentBonus: null,
+                        dateTime: new Date().toISOString(),
+                        isPayAsyouGo: true,
+                        isTopup: true,
+                        paymentType: paymentType,
+                        planName: null,
+                        referredBy: "",
+                        type: "Referral Bonus",
+                    });
+
+
+                    await userRef.update({
+                        balance: admin.firestore.FieldValue.increment(5),
+                        miles: admin.firestore.FieldValue.increment(600),
+                        referralUsed: true,
+                    });
+
+
+                    await this.addHistory(userId, {
+                        amount: 5,
+                        bonus: null,
+                        currentBonus: null,
+                        dateTime: new Date().toISOString(),
+                        isPayAsyouGo: true,
+                        isTopup: true,
+                        paymentType: paymentType,
+                        planName: null,
+                        referredBy: "",
+                        type: "Referral Reward",
+                    });
+
+
+                    if (refData.fcmToken) {
+                        await this.sendNotification(
+                            refData.fcmToken,
+                            "Referral Bonus!",
+                            "You earned bonus!"
+                        );
+                    }
+                }
             }
 
             // ------------------- STEP 9: Add SimTLV Balance -------------------
