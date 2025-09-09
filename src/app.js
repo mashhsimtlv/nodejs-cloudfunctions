@@ -11,6 +11,8 @@ const woocommerceRoutes = require("./routes/woocommerceRoutes");
 
 require("dotenv").config();
 
+
+
 const app = express();
 const server = http.createServer(app);
 
@@ -21,6 +23,11 @@ const io = new Server(server, {
         methods: ["GET", "POST"]
     }
 });
+
+app.use(
+    "/api/payments/stripe/webhook",
+    express.raw({ type: "application/json" })
+);
 
 // Store io globally (so controllers can use it)
 app.set("io", io);

@@ -2,6 +2,9 @@ const paymentService = require("../services/paymentService");
 const logger = require("../helpers/logger");
 const { db, Timestamp } = require("../config/db");
 const axios = require("axios");
+import Stripe from "stripe";
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
+
 
 /**
  * Create a Stripe Payment Intent
@@ -28,7 +31,8 @@ exports.createStripePaymentIntent = async (req, res) => {
             planId
         });
 
-        console.log(intent , "intent")
+
+
 
         logger.info("Stripe payment intent created", {
             userId,
@@ -49,32 +53,41 @@ exports.createStripePaymentIntent = async (req, res) => {
  * Handle Stripe Webhooks
  */
 exports.handleStripeWebhook = async (req, res) => {
-    // try {
-        const event = req.body; // ⚠️ use stripe.webhooks.constructEvent in production
+    const sig = req.headers["stripe-signature"];
+    let event;
 
-    console.log("Stripe webhook received", { type: event.type });
+    try {
+        event = stripe.webhooks.constructEvent(
+            req.rawBody,
+            sig,
+            process.env.STRIPE_WEBHOOK_SECRET
+        );
+    } catch (err) {
+        console.error("⚠️ Webhook signature verification failed:", err.message);
+        return res.status(400).send(`Webhook Error: ${err.message}`);
+    }
 
+    console.log("✅ Stripe webhook verified", { type: event.type });
 
-
-
-
-    if (event.type === "payment_intent.succeeded") {
+    try {
+        if (event.type === "payment_intent.succeeded") {
             const paymentIntent = event.data.object;
-
             const io = req.app.get("io");
 
-            await paymentService.saveStripeTransaction(paymentIntent , io);
-            // logger.info("Stripe transaction saved", { id: event.data.object.id });
-
-
+            await paymentService.saveStripeTransaction(paymentIntent, io);
+            console.log("✅ Stripe transaction processed:", paymentIntent.id);
         }
 
-        res.send("Webhook received");
-    // } catch (err) {
-    //     logger.error("Stripe webhook failed", { error: err.message });
-    //     res.status(400).send(`Webhook error: ${err.message}`);
-    // }
+        // You may also want to handle failed/canceled intents here:
+        // if (event.type === "payment_intent.payment_failed") { ... }
+
+        res.send({ received: true });
+    } catch (err) {
+        console.error("❌ Stripe webhook processing failed:", err.message);
+        return res.status(500).send(`Webhook handler failed: ${err.message}`);
+    }
 };
+
 
 // Create PayPal Order (already done)
 exports.createPayPalOrder = async (req, res) => {
