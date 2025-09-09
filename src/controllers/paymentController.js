@@ -28,6 +28,8 @@ exports.createStripePaymentIntent = async (req, res) => {
             planId
         });
 
+        console.log(intent , "intent")
+
         logger.info("Stripe payment intent created", {
             userId,
             amount,
