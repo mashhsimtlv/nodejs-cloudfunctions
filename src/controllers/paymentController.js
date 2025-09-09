@@ -2,8 +2,9 @@ const paymentService = require("../services/paymentService");
 const logger = require("../helpers/logger");
 const { db, Timestamp } = require("../config/db");
 const axios = require("axios");
-import Stripe from "stripe";
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
+const Stripe = require("stripe");
+const stripe = Stripe(process.env.STRIPE_SECRET_KEY);
+
 
 
 /**
