@@ -29,6 +29,12 @@ class PaymentService {
         });
     }
 
+    delayedEmit(io, event, data, delay = 3000) {
+        setTimeout(() => {
+            io.emit(event, data);
+        }, delay);
+    }
+
     /**
      * Save Stripe Transaction to Firestore & update balances/referrals
      */
@@ -152,7 +158,7 @@ class PaymentService {
                 };
 
 
-                io.emit("payment_event_" + user.uid, {
+                this.delayedEmit(io, "payment_event_" + user.uid, {
                     provider: "stripe",
                     type: "payment_intent.succeeded",
                     iccid: iccid,
@@ -550,13 +556,20 @@ class PaymentService {
             }
         };
 
-
-        io.emit("payment_event_" + user.uid, {
+        this.delayedEmit(io, "payment_event_" + user.uid, {
             provider: "stripe",
             type: "payment_intent.succeeded",
             iccid: iccid,
             data: emitPayload
         });
+
+
+        // io.emit("payment_event_" + user.uid, {
+        //     provider: "stripe",
+        //     type: "payment_intent.succeeded",
+        //     iccid: iccid,
+        //     data: emitPayload
+        // });
 
 
         return response.data;
