@@ -83,8 +83,10 @@ class PaymentService {
                 const planCode = metadata.planName; // ✅ planCode must be in Stripe metadata
                 console.log("Looking up GigaBoost plan:", planCode);
 
+                let simtlvGigaToken = user.existingUser ? await getMainToken() : await getToken();
+
                 if(user.isActive === false){
-                    let simtlvGigaToken = user.existingUser ? await getMainToken() : await getToken();
+                    simtlvGigaToken = await getMainToken();
                     let iccidResultGiga = await iccidService.activeIccid({
                         uid: userId,
                         amount: usdAmount,
@@ -280,11 +282,11 @@ class PaymentService {
                         console.log("ICCID found for the user in reffer case"  , iccid)
                         console.log("Found the iccid for refered by user " , refData.iccid)
 
-                        if (iccid) {
+                        if (iccidGiga) {
                             let euroAmount = this.usdToEur(5);
                             let reffererIccid = refData.iccid;
                             console.log("Adding balance to Referer :", { euroAmount });
-                            await this.addSimtlvBalance(iccid, user, euroAmount, io, simtlvToken, "pending");
+                            await this.addSimtlvBalance(iccidGiga, user, euroAmount, io, simtlvGigaToken, "pending");
                             let simtlvRefToken = refData.existingUser ? await getMainToken() : await getToken();
                             console.log("Adding balance to Referered By  :", { euroAmount });
                             await this.addSimtlvBalance(reffererIccid, refData, euroAmount, io, simtlvRefToken, "pending");
