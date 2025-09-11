@@ -125,7 +125,7 @@ class PaymentService {
 
                 try {
                     console.log("Calling affectPackageService with:", { iccidGiga, packageId });
-                    await this.affectPackage(iccid, packageId, user , paymentIntent);
+                    await this.affectPackage(iccidGiga, packageId, user , paymentIntent);
 
                     console.log("GigaBoost package applied successfully", { iccidGiga, packageId });
 
