@@ -79,8 +79,24 @@ class PaymentService {
                 console.log("Step 3 → Processing GigaBoost payment");
 
                 const iccid = user.iccid; // from app-registered-users
+                let iccidGiga = user.iccid;
                 const planCode = metadata.planName; // ✅ planCode must be in Stripe metadata
                 console.log("Looking up GigaBoost plan:", planCode);
+
+                if(user.isActive === false){
+                    let simtlvGigaToken = user.existingUser ? await getMainToken() : await getToken();
+                    let iccidResultGiga = await iccidService.activeIccid({
+                        uid: userId,
+                        amount: usdAmount,
+                        paymentType,
+                        transactionId: id,
+                        simtlvGigaToken,
+                    });
+                    if(!iccidGiga){
+                        iccidGiga = iccidResultGiga.iccid;
+                        console.log("ICCID activation result:", iccidGiga);
+                    }
+                }
 
                 // Fetch plan from Firestore
                 const planSnap = await db
@@ -95,15 +111,17 @@ class PaymentService {
                     return;
                 }
 
+
+
                 const plan = planSnap.docs[0].data();
                 const packageId = user.existingUser ? plan.id_simtlv : plan.id_simtlv_01;
                 console.log("Plan resolved:", { planCode, planName: plan.plan_name, packageId });
 
                 try {
-                    console.log("Calling affectPackageService with:", { iccid, packageId });
+                    console.log("Calling affectPackageService with:", { iccidGiga, packageId });
                     await this.affectPackage(iccid, packageId, user , paymentIntent);
 
-                    console.log("GigaBoost package applied successfully", { iccid, packageId });
+                    console.log("GigaBoost package applied successfully", { iccidGiga, packageId });
 
                     // Add history
                     await this.addHistory(userId, {
@@ -161,7 +179,7 @@ class PaymentService {
                 this.delayedEmit(io, "payment_event_" + user.uid, {
                     provider: "stripe",
                     type: "payment_intent.succeeded",
-                    iccid: iccid,
+                    iccid: iccidGiga,
                     data: emitPayload
                 });
 
