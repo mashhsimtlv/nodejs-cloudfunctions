@@ -85,8 +85,12 @@ class PaymentService {
 
                 let simtlvGigaToken = user.existingUser ? await getMainToken() : await getToken();
 
+                console.log(simtlvGigaToken , "token before the active iccid sim")
+
                 if(user.isActive === false){
+                    console.log("SIm is not active , going to activate the sim in GIGABOOST PLAN")
                     simtlvGigaToken = await getMainToken();
+                    console.log(simtlvGigaToken , "simtlv giga token")
                     let iccidResultGiga = await iccidService.activeIccid({
                         uid: userId,
                         amount: usdAmount,
