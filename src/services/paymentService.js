@@ -329,11 +329,15 @@ class PaymentService {
                         );
                     }
 
+                    console.log("ICCID found for the user in reffer case"  , iccid)
+                    console.log("Found the iccid for refered by user " , refData.iccid)
+
                     if (iccid) {
                         let euroAmount = this.usdToEur(5);
                         let reffererIccid = refData.iccid;
                         console.log("Adding balance to Referer :", { euroAmount });
                         await this.addSimtlvBalance(iccid, user, euroAmount, io, simtlvToken, "pending");
+                        console.log("Adding balance to Referered By  :", { euroAmount });
                         await this.addSimtlvBalance(reffererIccid, refData, euroAmount, io, simtlvToken, "pending");
                     }
 
