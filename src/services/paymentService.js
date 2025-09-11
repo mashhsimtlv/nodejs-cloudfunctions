@@ -250,11 +250,6 @@ class PaymentService {
                             miles: admin.firestore.FieldValue.increment(600),
                             referralUsed: true,
                         });
-                        await user.update({
-                            balance: admin.firestore.FieldValue.increment(5),
-                            miles: admin.firestore.FieldValue.increment(600),
-                            referralUsed: true,
-                        });
 
 
                         await this.addHistory(userId, {
