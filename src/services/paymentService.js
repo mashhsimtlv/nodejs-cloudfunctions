@@ -917,7 +917,55 @@ class PaymentService {
             if (productType === "GigaBoost" && planCode) {
                 console.log("Step 4 → Processing GigaBoost PayPal payment");
 
-                // Fetch plan from Firestore
+                let iccid = user.iccid; // from app-registered-users
+                let iccidGiga = user.iccid;
+                console.log("Looking up GigaBoost plan:", planCode);
+
+                let simtlvGigaToken = user.existingUser ? await getMainToken() : await getToken();
+                console.log(simtlvGigaToken , "token before active ICCID");
+
+                let emitPayload = null;
+
+                // ------------------- Activate ICCID if not active -------------------
+                if (user.isActive === false) {
+                    console.log("SIM is not active → activating in GigaBoost PayPal flow");
+                    simtlvGigaToken = await getMainToken();
+
+                    const iccidResultGiga = await iccidService.activeIccid({
+                        uid: userId,
+                        amount: usdAmount,
+                        paymentType,
+                        transactionId,
+                        simtlvToken: simtlvGigaToken,
+                    });
+
+                    if (!iccidGiga) {
+                        iccidGiga = iccidResultGiga.iccid;
+                        console.log("ICCID activation result:", iccidGiga);
+                    }
+
+                    const subscriberResult = await iccidService.getSingleSubscriber({
+                        iccid: iccidResultGiga.iccid,
+                        userData: user
+                    });
+
+                    emitPayload = {
+                        status: { code: 200, msg: "Success", status },
+                        getSingleSubscriber: {
+                            subscriberId: subscriberResult.getSingleSubscriber.subscriberId,
+                            balance: subscriberResult.getSingleSubscriber.balance,
+                            lastMcc: subscriberResult.getSingleSubscriber.lastMcc,
+                            sim: {
+                                id: subscriberResult.getSingleSubscriber.sim.id,
+                                subscriberId: subscriberResult.getSingleSubscriber.sim.subscriberId,
+                                smdpServer: subscriberResult.getSingleSubscriber.sim.smdpServer,
+                                activationCode: subscriberResult.getSingleSubscriber.sim.activationCode
+                            }
+                        }
+                    };
+                }
+
+                // ------------------- Fetch Plan -------------------
                 const planSnap = await db
                     .collection("gigaBoostPlans")
                     .where("plan_name", "==", planCode)
@@ -932,23 +980,14 @@ class PaymentService {
 
                 const plan = planSnap.docs[0].data();
                 const packageId = user.existingUser ? plan.id_simtlv : plan.id_simtlv_01;
-                const iccid = user.iccid;
+                console.log("Plan resolved:", { planCode, planName: plan.plan_name, packageId });
 
-                console.log("Plan resolved:", {
-                    planCode,
-                    planName: plan.plan_name,
-                    packageId,
-                    iccid,
-                    existingUser: user.existingUser,
-                });
-
-                // try {
-                    console.log("Calling affectPackageService with:", { iccid, packageId });
-                    await this.affectPackage(iccid, packageId, user , data);
-
+                // ------------------- Apply Package -------------------
+                try {
+                    console.log("Calling affectPackageService with:", { iccidGiga, packageId });
+                    await this.affectPackage(iccidGiga, packageId, user , data);
                     console.log("✅ GigaBoost package applied successfully");
 
-                    // Add history
                     await this.addHistory(userId, {
                         amount: usdAmount,
                         bonus: 0,
@@ -961,9 +1000,7 @@ class PaymentService {
                         referredBy: "",
                         type: "GigaBoost Purchase",
                     });
-                    console.log("History entry added for GigaBoost");
 
-                    // Record transaction
                     await db.collection("transactions").add({
                         userId,
                         amount: usdAmount,
@@ -977,44 +1014,118 @@ class PaymentService {
                         orderId,
                     });
                     console.log("Transaction recorded for GigaBoost PayPal:", { userId, transactionId });
+                } catch (err) {
+                    console.log("❌ Error applying GigaBoost package", { error: err.message, userId });
+                    await this.notifyAdminEmail("PayPal GigaBoost Failure", err.message);
+                }
 
-                // } catch (err) {
-                //     console.log("❌ Error applying GigaBoost package", { error: err.message, userId });
-                //     await this.notifyAdminEmail("PayPal GigaBoost Failure", err.message);
-                // }
-
-
-                const emitPayload = {
-                    status: {
-                        code: 200,
-                        msg: "Success",
-                        status: status
-                    },
-                    getSingleSubscriber: {
-                        subscriberId: null,
-                        balance: null,
-                        lastMcc: null,
-                        sim: {
-                            id: null,
+                // ------------------- Default Emit Payload -------------------
+                if (!emitPayload) {
+                    emitPayload = {
+                        status: { code: 200, msg: "Success", status },
+                        getSingleSubscriber: {
                             subscriberId: null,
-                            smdpServer: null,
-                            activationCode: null
+                            balance: null,
+                            lastMcc: null,
+                            sim: {
+                                id: null,
+                                subscriberId: null,
+                                smdpServer: null,
+                                activationCode: iccidGiga || "testiccid"
+                            }
                         }
-                    }
-                };
+                    };
+                }
 
-
-                io.emit("payment_event_" + user.uid, {
-                    provider: "stripe",
-                    type: "payment_intent.succeeded",
-                    iccid: iccid,
+                this.delayedEmit(io, "payment_event_" + user.uid, {
+                    provider: "paypal",
+                    type: "paypal.order.succeeded",
+                    iccid: iccidGiga,
                     data: emitPayload
                 });
 
+                // ------------------- Referral Bonus Logic -------------------
+                if (referredBy && !user.referralUsed) {
+                    console.log("Referral detected → applying bonus for", { referredBy, userId });
 
+                    const referrerSnap = await db
+                        .collection("app-registered-users")
+                        .where("referralCode", "==", referredBy)
+                        .limit(1)
+                        .get();
+
+                    if (!referrerSnap.empty) {
+                        const referrer = referrerSnap.docs[0];
+                        const referrerId = referrer.id;
+                        const refData = referrer.data();
+
+                        const refBonus =
+                            refData.tier === "VIP" ? 8 :
+                                refData.tier === "Diamond" ? 7 :
+                                    refData.tier === "Gold" ? 6 : 5;
+
+                        await db.collection("app-registered-users").doc(referrerId).update({
+                            balance: admin.firestore.FieldValue.increment(refBonus),
+                            miles: admin.firestore.FieldValue.increment(600),
+                            "referralStats.pendingCount": (refData.referralStats?.pendingCount || 1) - 1,
+                        });
+
+                        await this.addHistory(referrerId, {
+                            amount: refBonus,
+                            bonus: 0,
+                            currentBonus: null,
+                            dateTime: new Date().toISOString(),
+                            isPayAsyouGo: true,
+                            isTopup: true,
+                            paymentType,
+                            planName: null,
+                            referredBy: "",
+                            type: "Referral Bonus",
+                        });
+
+                        await userRef.update({
+                            balance: admin.firestore.FieldValue.increment(5),
+                            miles: admin.firestore.FieldValue.increment(600),
+                            referralUsed: true,
+                        });
+
+                        await this.addHistory(userId, {
+                            amount: 5,
+                            bonus: 0,
+                            currentBonus: null,
+                            dateTime: new Date().toISOString(),
+                            isPayAsyouGo: true,
+                            isTopup: true,
+                            paymentType,
+                            planName: null,
+                            referredBy: "",
+                            type: "Referral Reward",
+                        });
+
+                        if (refData.fcmToken) {
+                            await this.sendNotification(
+                                refData.fcmToken,
+                                "Referral Bonus!",
+                                "You earned bonus!"
+                            );
+                        }
+
+                        if (iccidGiga) {
+                            let euroAmount = this.usdToEur(5);
+                            let referrerIccid = refData.iccid;
+
+                            console.log("Adding balance to Referrer & Referee in SimTLV");
+                            await this.addSimtlvBalance(iccidGiga, user, euroAmount, io, simtlvGigaToken, "pending");
+                            let simtlvRefToken = refData.existingUser ? await getMainToken() : await getToken();
+                            await this.addSimtlvBalance(referrerIccid, refData, euroAmount, io, simtlvRefToken, "pending");
+                        }
+                    }
+                }
+
+                // ------------------- Webhook -------------------
                 const payload = {
-                    totalPaymentValue: data.amount, // USD → integer
-                    paymentMethod: "stripe",
+                    totalPaymentValue: data.amount,
+                    paymentMethod: "paypal",
                     userUid: user.uid || "unknown",
                     firstName: user.firstName || "",
                     lastName: user.lastName || "",
@@ -1022,7 +1133,7 @@ class PaymentService {
                     transactionId: data.id,
                     invoiceName: data.metadata.invoiceName || "",
                     product: data.metadata.productType || "unknown",
-                    paymentType: data.metadata.paymentType || "stripe",
+                    paymentType: data.metadata.paymentType || "paypal",
                 };
 
                 console.log("Posting to n8n webhook:", payload);
