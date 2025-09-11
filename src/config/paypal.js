@@ -4,7 +4,7 @@ require("dotenv").config();
 async function getPayPalAccessToken() {
     const response = await axios({
         method: "post",
-        url: "https://api.sandbox.com/v1/oauth2/token",
+        url: `${process.env.PAYPAL_URL}/v1/oauth2/token`,
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
         auth: {
             username: process.env.PAYPAL_CLIENT_ID,
