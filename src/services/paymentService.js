@@ -87,7 +87,12 @@ class PaymentService {
 
                 console.log(simtlvGigaToken , "token before the active iccid sim")
 
+                let sendSocketForPlan = true;
+
+                let emitPayload = null;
+
                 if(user.isActive === false){
+                    sendSocketForPlan = false;
                     console.log("SIm is not active , going to activate the sim in GIGABOOST PLAN")
                     simtlvGigaToken = await getMainToken();
                     console.log(simtlvGigaToken , "simtlv giga token")
@@ -102,6 +107,37 @@ class PaymentService {
                         iccidGiga = iccidResultGiga.iccid;
                         console.log("ICCID activation result:", iccidGiga);
                     }
+
+
+                    const subscriberResult = await iccidService.getSingleSubscriber({
+                        iccid: iccidResultGiga.iccid,
+                        userData: user
+                    })
+
+
+                    const subscriberID =  subscriberResult.getSingleSubscriber.sim.subscriberId;
+
+
+                    emitPayload = {
+                        status: {
+                            code: 200,
+                            msg: "Success",
+                            status: "completed"
+                        },
+                        getSingleSubscriber: {
+                            subscriberId: subscriberResult.getSingleSubscriber.subscriberId,
+                            balance: subscriberResult.getSingleSubscriber.balance,
+                            lastMcc: subscriberResult.getSingleSubscriber.lastMcc,
+                            sim: {
+                                id: subscriberResult.getSingleSubscriber.sim.id,
+                                subscriberId: subscriberResult.getSingleSubscriber.sim.subscriberId,
+                                smdpServer: subscriberResult.getSingleSubscriber.sim.smdpServer,
+                                activationCode: subscriberResult.getSingleSubscriber.sim.activationCode
+                            }
+                        }
+                    };
+
+
                 }
 
                 // Fetch plan from Firestore
@@ -161,25 +197,26 @@ class PaymentService {
                     console.log("❌ Error applying GigaBoost package", { error: err.message, userId });
                     await this.notifyAdminEmail("Stripe GigaBoost Failure", err.message);
                 }
-
-                const emitPayload = {
-                    status: {
-                        code: 200,
-                        msg: "Success",
-                        status: "completed"
-                    },
-                    getSingleSubscriber: {
-                        subscriberId: null,
-                        balance: null,
-                        lastMcc: null,
-                        sim: {
-                            id: null,
+                if(!emitPayload) {
+                    emitPayload = {
+                        status: {
+                            code: 200,
+                            msg: "Success",
+                            status: "completed"
+                        },
+                        getSingleSubscriber: {
                             subscriberId: null,
-                            smdpServer: null,
-                            activationCode: iccidGiga?iccidGiga:"testiccid"
+                            balance: null,
+                            lastMcc: null,
+                            sim: {
+                                id: null,
+                                subscriberId: null,
+                                smdpServer: null,
+                                activationCode: iccidGiga ? iccidGiga : "testiccid"
+                            }
                         }
-                    }
-                };
+                    };
+                }
 
 
                 this.delayedEmit(io, "payment_event_" + user.uid, {
