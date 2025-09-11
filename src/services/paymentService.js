@@ -96,7 +96,7 @@ class PaymentService {
                         amount: usdAmount,
                         paymentType,
                         transactionId: id,
-                        simtlvGigaToken,
+                        simtlvToken: simtlvGigaToken,
                     });
                     if(!iccidGiga){
                         iccidGiga = iccidResultGiga.iccid;
