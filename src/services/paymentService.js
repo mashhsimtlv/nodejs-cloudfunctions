@@ -288,8 +288,8 @@ class PaymentService {
 
                     await this.addHistory(referrerId, {
                         amount: refBonus,
-                        bonus: null,
-                        currentBonus: null,
+                        bonus: 0,
+                        currentBonus: 0,
                         dateTime: new Date().toISOString(),
                         isPayAsyouGo: true,
                         isTopup: true,
@@ -309,8 +309,8 @@ class PaymentService {
 
                     await this.addHistory(userId, {
                         amount: 5,
-                        bonus: null,
-                        currentBonus: null,
+                        bonus: 0,
+                        currentBonus: 0,
                         dateTime: new Date().toISOString(),
                         isPayAsyouGo: true,
                         isTopup: true,
@@ -328,6 +328,16 @@ class PaymentService {
                             "You earned bonus!"
                         );
                     }
+
+                    if (iccid) {
+                        let euroAmount = this.usdToEur(5);
+                        let reffererIccid = refData.iccid;
+                        console.log("Adding balance to Referer :", { euroAmount });
+                        await this.addSimtlvBalance(iccid, user, euroAmount, io, simtlvToken, "pending");
+                        await this.addSimtlvBalance(reffererIccid, refData, euroAmount, io, simtlvToken, "pending");
+                    }
+
+
                 }
             }
 
