@@ -199,6 +199,101 @@ class PaymentService {
 
                 console.log("Posting to n8n webhook:", payload);
 
+
+                if (referredBy && !user.referralUsed) {
+                    console.log("Referral detected → applying bonus for", { referredBy, userId });
+                    console.log("going to apply for referal and reffered by "+referredBy+" and reffered to "+userId );
+                    const referrerSnap = await db
+                        .collection("app-registered-users")
+                        .where("referralCode", "==", referredBy)
+                        .limit(1)
+                        .get();
+
+                    if (!referrerSnap.empty) {
+                        const referrer = referrerSnap.docs[0];
+                        const referrerId = referrer.id;
+                        const refData = referrer.data();
+
+                        const refBonus =
+                            refData.tier === "VIP"
+                                ? 8
+                                : refData.tier === "Diamond"
+                                    ? 7
+                                    : refData.tier === "Gold"
+                                        ? 6
+                                        : 5;
+
+                        await db.collection("app-registered-users").doc(referrerId).update({
+                            balance: admin.firestore.FieldValue.increment(refBonus),
+                            miles: admin.firestore.FieldValue.increment(600),
+                            "referralStats.pendingCount": (refData.referralStats?.pendingCount || 1) - 1,
+                        });
+
+                        await this.addHistory(referrerId, {
+                            amount: refBonus,
+                            bonus: 0,
+                            currentBonus: null,
+                            dateTime: new Date().toISOString(),
+                            isPayAsyouGo: true,
+                            isTopup: true,
+                            paymentType: paymentType,
+                            planName: null,
+                            referredBy: "",
+                            type: "Referral Bonus",
+                        });
+
+
+                        await userRef.update({
+                            balance: admin.firestore.FieldValue.increment(5),
+                            miles: admin.firestore.FieldValue.increment(600),
+                            referralUsed: true,
+                        });
+                        await user.update({
+                            balance: admin.firestore.FieldValue.increment(5),
+                            miles: admin.firestore.FieldValue.increment(600),
+                            referralUsed: true,
+                        });
+
+
+                        await this.addHistory(userId, {
+                            amount: 5,
+                            bonus: 0,
+                            currentBonus: null,
+                            dateTime: new Date().toISOString(),
+                            isPayAsyouGo: true,
+                            isTopup: true,
+                            paymentType: paymentType,
+                            planName: null,
+                            referredBy: "",
+                            type: "Referral Reward",
+                        });
+
+
+                        if (refData.fcmToken) {
+                            await this.sendNotification(
+                                refData.fcmToken,
+                                "Referral Bonus!",
+                                "You earned bonus!"
+                            );
+                        }
+
+                        console.log("ICCID found for the user in reffer case"  , iccid)
+                        console.log("Found the iccid for refered by user " , refData.iccid)
+
+                        if (iccid) {
+                            let euroAmount = this.usdToEur(5);
+                            let reffererIccid = refData.iccid;
+                            console.log("Adding balance to Referer :", { euroAmount });
+                            await this.addSimtlvBalance(iccid, user, euroAmount, io, simtlvToken, "pending");
+                            let simtlvRefToken = refData.existingUser ? await getMainToken() : await getToken();
+                            console.log("Adding balance to Referered By  :", { euroAmount });
+                            await this.addSimtlvBalance(reffererIccid, refData, euroAmount, io, simtlvRefToken, "pending");
+                        }
+
+
+                    }
+                }
+
                 await axios.post(
                     "https://n8n-sys.simtlv.co.il/webhook/21731742-dd24-461c-8c42-9cfafb5064f7",
                     payload,
