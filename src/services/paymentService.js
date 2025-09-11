@@ -176,7 +176,7 @@ class PaymentService {
                             id: null,
                             subscriberId: null,
                             smdpServer: null,
-                            activationCode: "testiccid"
+                            activationCode: iccidGiga?iccidGiga:"testiccid"
                         }
                     }
                 };
