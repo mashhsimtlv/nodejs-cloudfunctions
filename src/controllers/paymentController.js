@@ -1,9 +1,11 @@
 const paymentService = require("../services/paymentService");
 const logger = require("../helpers/logger");
-const { db, Timestamp } = require("../config/db");
+const {  Timestamp } = require("../config/db");
 const axios = require("axios");
 const Stripe = require("stripe");
 const stripe = Stripe(process.env.STRIPE_SECRET_KEY);
+const admin = require('./../helpers/firebase')
+const db = admin.firestore();
 
 
 
@@ -77,10 +79,15 @@ exports.handleStripeWebhook = async (req, res) => {
     try {
         if (event.type === "payment_intent.succeeded") {
             const paymentIntent = event.data.object;
-            const io = req.app.get("io");
+            const { flowVersion = "v1" } = paymentIntent.metadata || {};
 
-            await paymentService.saveStripeTransaction(paymentIntent, io);
-            console.log("✅ Stripe transaction processed:", paymentIntent.id);
+            if (flowVersion === "v2") {
+                console.log("Processing via v2 flow");
+                await paymentService.saveStripeTransaction(paymentIntent, req.app.get("io"));
+            } else {
+                console.log("Processing via v1 fallback flow");
+                await paymentService.saveLegacyStripeTransaction(paymentIntent);
+            }
         }
 
         // You may also want to handle failed/canceled intents here:
@@ -154,30 +161,39 @@ exports.handlePayPalWebhook = async (req, res) => {
 
         console.log("PayPal webhook received", { eventType: event.event_type });
 
-
         if (event.event_type === "PAYMENT.CAPTURE.COMPLETED") {
             const capture = event.resource;
-
-            console.log(capture , 'capture')
-
-            const transactionId = capture.id;
-            const amount = parseFloat(capture.amount.value);
             const metadata = JSON.parse(capture.custom_id || "{}");
+            const flowVersion = metadata.flowVersion || "v1"; // 👈 decide path
 
+            if (flowVersion === "v2") {
+                console.log("Processing PayPal via v2 flow");
+                const io = req.app.get("io");
 
-            const io = req.app.get("io");
+                await paymentService.savePayPalTransaction({
+                    orderId: capture.supplementary_data?.related_ids?.order_id,
+                    transactionId: capture.id,
+                    amount: parseFloat(capture.amount.value),
+                    currency: capture.amount.currency_code,
+                    status: capture.status,
+                    metadata,
+                }, io);
+            } else {
+                console.log("Processing PayPal via v1 fallback flow");
 
-            await paymentService.savePayPalTransaction({
-                orderId: capture.supplementary_data?.related_ids?.order_id,
-                transactionId,
-                amount,
-                currency: capture.amount.currency_code,
-                status: capture.status,
-                metadata: metadata,
-            }, io);
+                await db.collection("transactions").add({
+                    userId: metadata.userId || "unknown",
+                    amount: parseFloat(capture.amount.value),
+                    transactionId: capture.id,
+                    transactionTime: Timestamp.fromMillis(new Date(capture.create_time).getTime()),
+                    isUsed: false,
+                    provider: "paypal",
+                    paymentType: metadata.paymentType || "unknown",
+                    productType: metadata.productType || "unknown",
+                });
 
-
-
+                console.log("✅ Legacy PayPal transaction saved:", capture.id);
+            }
         }
 
         res.status(200).send("Webhook received");

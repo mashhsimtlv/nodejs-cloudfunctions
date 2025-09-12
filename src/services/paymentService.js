@@ -25,7 +25,7 @@ class PaymentService {
             amount,
             currency: "usd",
             payment_method_types: ["card"],
-            metadata: { userId, productType, paymentType , planName , planId },
+            metadata: { userId, productType, paymentType , planName , planId , flowVersion: "v2"},
         });
     }
 
@@ -583,6 +583,28 @@ class PaymentService {
         }
     }
 
+    async saveLegacyStripeTransaction(paymentIntent) {
+        const { metadata, id, amount_received, created } = paymentIntent;
+        const userId = metadata.userId || "unknown";
+        const productType = metadata.productType || "unknown";
+        const paymentType = metadata.paymentType || "unknown";
+
+        // only save basic tx, don’t re-credit balance
+        await db.collection("transactions").add({
+            userId,
+            amount: amount_received / 100,
+            transactionId: id,
+            transactionTime: new Date(created * 1000),
+            isUsed: false,
+            provider: "stripe",
+            productType,
+            paymentType,
+        });
+
+        console.log("✅ Legacy transaction saved:", { userId, transactionId: id });
+    }
+
+
     // ------------------- Affect Package Method -------------------
     async affectPackage(iccid, packageId, user , paymentIntent) {
         console.log("===== AffectPackage started =====", { iccid, packageId, userId: user.uid });
@@ -806,7 +828,7 @@ class PaymentService {
         const accessToken = await getPayPalAccessToken();
 
         // ✅ Store metadata inside `custom_id` (same as your Cloud Function)
-        const customId = JSON.stringify({ userId, productType, paymentType , planName, planId });
+        const customId = JSON.stringify({ userId, productType, paymentType , planName, planId , flowVersion: "v2"});
 
         const response = await axios.post(
             `${process.env.PAYPAL_URL}/v2/checkout/orders`,
