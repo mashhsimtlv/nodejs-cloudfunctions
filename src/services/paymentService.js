@@ -29,7 +29,7 @@ class PaymentService {
         });
     }
 
-    delayedEmit(io, event, data, delay = 3000) {
+    delayedEmit(io, event, data, delay = 5000) {
         setTimeout(() => {
             io.emit(event, data);
         }, delay);
