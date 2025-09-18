@@ -566,6 +566,12 @@ class PaymentService {
                 productType,
                 paymentType,
             });
+
+            await Transaction.update(
+                { amount: usdAmount, product_type: productType, payment_type: paymentType },
+                { where: { transactionId: id } }
+            );
+
             console.log("Transaction saved:", { userId, transactionId: id });
 
             console.log("===== Stripe transaction processed successfully =====", {
@@ -933,6 +939,23 @@ class PaymentService {
                 productType,
                 planCode,
             });
+
+            const [result, createdRow] = await Transaction.findOrCreate({
+                where: { transaction_id: transactionId },
+                defaults: {
+                    user_id: userId,
+                    transaction_id: transactionId,
+                    amount: amount,
+                    provider: "payapl",
+                    product_type: productType,
+                    payment_type: paymentType
+                },
+            });
+
+            if (!createdRow) {
+                console.log("Duplicate transaction ignored:", id);
+                return;
+            }
 
             // ------------------- STEP 2: Prevent Duplicate -------------------
             const txRef = db.collection("transactions").where("transactionId", "==", transactionId).limit(1);
@@ -1383,6 +1406,12 @@ class PaymentService {
                 status,
                 orderId,
             });
+
+            await Transaction.update(
+                { amount: usdAmount, product_type: productType, payment_type: paymentType },
+                { where: { transactionId: transactionId } }
+            );
+
             console.log("Transaction saved:", { userId, transactionId });
 
             console.log("===== PayPal transaction processed successfully =====", {
