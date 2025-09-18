@@ -65,7 +65,7 @@ class PaymentService {
                     provider: "stripe",
                     product_type: productType,
                     payment_type: paymentType,
-                    created_at: new Date(created * 1000),
+                    createdAt: new Date(created * 1000),
                 },
             });
 
