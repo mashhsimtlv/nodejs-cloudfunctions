@@ -40,7 +40,7 @@ class Transaction extends Model {
                 },
                 transactionTime: {
                     type: DataTypes.DATE,
-                    allowNull: false,
+                    allowNull: true,
                 },
             },
             {
