@@ -11,6 +11,8 @@ const db = admin.firestore();
 const iccidService = require("../services/iccidService");
 const subscriberService = require("../services/subscriberService");
 const {getMainToken, getToken} = require("../helpers/generalSettings");
+const { sequelize, Transaction } = require("../models"); // Sequelize models
+
 
 
 class PaymentService {
@@ -25,6 +27,7 @@ class PaymentService {
             amount,
             currency: "usd",
             payment_method_types: ["card"],
+            statement_descriptor: "SIMTLV - eSIM&Sim",
             metadata: { userId, productType, paymentType , planName , planId , flowVersion: "v2"},
         });
     }
@@ -51,6 +54,25 @@ class PaymentService {
             const productType = metadata.productType || "unknown";
 
             console.log("Step 1 → Extracted metadata:", { userId, subscriberId, amountUSD, paymentType, productType });
+
+
+            const [result, createdRow] = await Transaction.findOrCreate({
+                where: { transaction_id: id },
+                defaults: {
+                    user_id: userId,
+                    transaction_id: id,
+                    amount: amountUSD,
+                    provider: "stripe",
+                    product_type: productType,
+                    payment_type: paymentType,
+                    created_at: new Date(created * 1000),
+                },
+            });
+
+            if (!createdRow) {
+                console.log("Duplicate transaction ignored:", id);
+                return;
+            }
 
             // Check if transaction already exists
             const txRef = db.collection("transactions").where("transactionId", "==", id).limit(1);

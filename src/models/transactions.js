@@ -1,0 +1,56 @@
+const { Model, DataTypes } = require("sequelize");
+
+class Transaction extends Model {
+    static init(sequelize) {
+        return super.init(
+            {
+                userId: {
+                    type: DataTypes.STRING(128),
+                    allowNull: false,
+                },
+                transactionId: {
+                    type: DataTypes.STRING(255),
+                    allowNull: false,
+                    unique: true, // ensure idempotency
+                },
+                amount: {
+                    type: DataTypes.DECIMAL(10, 2),
+                    allowNull: false,
+                },
+                currency: {
+                    type: DataTypes.STRING(10),
+                    allowNull: false,
+                    defaultValue: "USD",
+                },
+                provider: {
+                    type: DataTypes.ENUM("stripe", "paypal"),
+                    allowNull: false,
+                },
+                productType: {
+                    type: DataTypes.STRING(50),
+                    allowNull: true,
+                },
+                paymentType: {
+                    type: DataTypes.STRING(50),
+                    allowNull: true,
+                },
+                isUsed: {
+                    type: DataTypes.BOOLEAN,
+                    defaultValue: true,
+                },
+                transactionTime: {
+                    type: DataTypes.DATE,
+                    allowNull: false,
+                },
+            },
+            {
+                sequelize,
+                modelName: "Transaction",
+                tableName: "transactions",
+                timestamps: true, // adds createdAt / updatedAt
+            }
+        );
+    }
+}
+
+module.exports = Transaction;

@@ -8,6 +8,7 @@ const paymentRoutes = require("./routes/paymentRoutes");
 const notificationRoutes = require("./routes/notificationRoutes");
 const subscriberRoutes = require("./routes/subscriberRoutes");
 const woocommerceRoutes = require("./routes/woocommerceRoutes");
+const sequelize = require('./models').sequelize;
 
 require("dotenv").config();
 
@@ -30,7 +31,15 @@ app.set("io", io);
 
 // Middleware
 app.use(cors());
+
+sequelize.authenticate()
+    .then(() => console.log('Database connected...'))
+    .catch(err => console.log('Error: ' + err));
+
 app.use(bodyParser.json());
+
+
+
 
 // Routes
 app.use("/api/payments", paymentRoutes);
