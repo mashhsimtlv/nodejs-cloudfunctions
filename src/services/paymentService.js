@@ -213,6 +213,12 @@ class PaymentService {
                         productType: planCode,
                         paymentType,
                     });
+
+                    await Transaction.update(
+                        { amount: usdAmount, product_type: productType, payment_type: paymentType },
+                        { where: { transaction_id: id } }
+                    );
+
                     console.log("Transaction recorded for GigaBoost:", { userId, transactionId: id });
 
                 } catch (err) {
@@ -569,7 +575,7 @@ class PaymentService {
 
             await Transaction.update(
                 { amount: usdAmount, product_type: productType, payment_type: paymentType },
-                { where: { transactionId: id } }
+                { where: { transaction_id: id } }
             );
 
             console.log("Transaction saved:", { userId, transactionId: id });
@@ -1080,6 +1086,10 @@ class PaymentService {
                         status,
                         orderId,
                     });
+                    await Transaction.update(
+                        { amount: usdAmount, product_type: productType, payment_type: paymentType },
+                        { where: { transaction_id: transactionId } }
+                    );
                     console.log("Transaction recorded for GigaBoost PayPal:", { userId, transactionId });
                 } catch (err) {
                     console.log("❌ Error applying GigaBoost package", { error: err.message, userId });
@@ -1409,7 +1419,7 @@ class PaymentService {
 
             await Transaction.update(
                 { amount: usdAmount, product_type: productType, payment_type: paymentType },
-                { where: { transactionId: transactionId } }
+                { where: { transaction_id: transactionId } }
             );
 
             console.log("Transaction saved:", { userId, transactionId });
