@@ -4,11 +4,11 @@ class Transaction extends Model {
     static init(sequelize) {
         return super.init(
             {
-                userId: {
+                user_id: {
                     type: DataTypes.STRING(128),
                     allowNull: false,
                 },
-                transactionId: {
+                transaction_id: {
                     type: DataTypes.STRING(255),
                     allowNull: false,
                     unique: true, // ensure idempotency
@@ -26,11 +26,11 @@ class Transaction extends Model {
                     type: DataTypes.ENUM("stripe", "paypal"),
                     allowNull: false,
                 },
-                productType: {
+                product_type: {
                     type: DataTypes.STRING(50),
                     allowNull: true,
                 },
-                paymentType: {
+                payment_type: {
                     type: DataTypes.STRING(50),
                     allowNull: true,
                 },
