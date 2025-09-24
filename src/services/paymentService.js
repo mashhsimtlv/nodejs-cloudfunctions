@@ -21,7 +21,7 @@ class PaymentService {
      */
     async createStripePaymentIntent({ amount, userId, productType, paymentType , planName , planId , device_id }) {
 
-        console.log("Creating StripePaymentIntent here is plan name" , planName);
+        console.log("Here is the device id " , device_id);
 
         return await stripe.paymentIntents.create({
             amount,
