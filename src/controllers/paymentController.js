@@ -19,7 +19,7 @@ exports.createStripePaymentIntent = async (req, res) => {
         console.log(req.body , "req body")
 
 
-        const { amount, userId, productType, paymentType , planName , planId } = req.body;
+        const { amount, userId, productType, paymentType , planName , planId , device_id } = req.body;
 
         if (!amount || typeof amount !== "number") {
             return res.status(400).json({ error: "Amount must be a valid number" });
@@ -31,7 +31,8 @@ exports.createStripePaymentIntent = async (req, res) => {
             productType,
             paymentType,
             planName,
-            planId
+            planId,
+            device_id
         });
 
 
@@ -104,7 +105,7 @@ exports.handleStripeWebhook = async (req, res) => {
 // Create PayPal Order (already done)
 exports.createPayPalOrder = async (req, res) => {
     // try {
-        const { amount, currency, userId, productType, paymentType , planName, planId } = req.body;
+        const { amount, currency, userId, productType, paymentType , planName, planId , device_id } = req.body;
 
         console.log(req.body , "req body for paypal ")
 
@@ -115,7 +116,7 @@ exports.createPayPalOrder = async (req, res) => {
             productType,
             paymentType,
             planName,
-            planId
+            planId , device_id
         });
 
 

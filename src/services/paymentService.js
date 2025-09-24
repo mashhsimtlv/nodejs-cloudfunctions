@@ -19,7 +19,7 @@ class PaymentService {
     /**
      * Create Stripe PaymentIntent
      */
-    async createStripePaymentIntent({ amount, userId, productType, paymentType , planName , planId }) {
+    async createStripePaymentIntent({ amount, userId, productType, paymentType , planName , planId , device_id }) {
 
         console.log("Creating StripePaymentIntent here is plan name" , planName);
 
@@ -28,7 +28,7 @@ class PaymentService {
             currency: "usd",
             payment_method_types: ["card"],
             statement_descriptor: "SIMTLV - eSIM&Sim",
-            metadata: { userId, productType, paymentType , planName , planId , flowVersion: "v2"},
+            metadata: { userId, productType, paymentType , planName , planId , flowVersion: "v2" , device_id},
         });
     }
 
@@ -858,11 +858,11 @@ class PaymentService {
         }
     }
 
-    async createPayPalOrder({ amount, currency, userId, productType, paymentType , planName, planId }) {
+    async createPayPalOrder({ amount, currency, userId, productType, paymentType , planName, planId , device_id }) {
         const accessToken = await getPayPalAccessToken();
 
         // ✅ Store metadata inside `custom_id` (same as your Cloud Function)
-        const customId = JSON.stringify({ userId, productType, paymentType , planName, planId , flowVersion: "v2"});
+        const customId = JSON.stringify({ userId, productType, paymentType , planName, planId , flowVersion: "v2" , device_id});
 
         const response = await axios.post(
             `${process.env.PAYPAL_URL}/v2/checkout/orders`,
