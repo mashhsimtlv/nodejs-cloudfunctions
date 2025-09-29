@@ -52,6 +52,46 @@ exports.createStripePaymentIntent = async (req, res) => {
         res.status(500).json({ error: err.message });
     }
 };
+exports.createStripeTestPaymentIntent = async (req, res) => {
+    try {
+        const io = req.app.get("io");
+
+        console.log(req.body , "req body")
+
+
+        const { amount, userId, productType, paymentType , planName , planId , device_id } = req.body;
+
+        if (!amount || typeof amount !== "number") {
+            return res.status(400).json({ error: "Amount must be a valid number" });
+        }
+
+        const intent = await paymentService.createStripeTestPaymentIntent({
+            amount,
+            userId,
+            productType,
+            paymentType,
+            planName,
+            planId,
+            device_id
+        });
+
+
+
+
+        logger.info("Stripe payment intent created", {
+            userId,
+            amount,
+            productType,
+            paymentType,
+            clientSecret: intent.client_secret,
+        });
+
+        res.json({ clientSecret: intent.client_secret });
+    } catch (err) {
+        logger.error("Stripe payment intent failed", { error: err.message });
+        res.status(500).json({ error: err.message });
+    }
+};
 
 /**
  * Handle Stripe Webhooks

@@ -1,4 +1,5 @@
 const stripe = require("../config/stripe");
+const stripeTest = require("../config/streipe-test");
 const { Timestamp } = require("../config/db");
 
 const { getPayPalAccessToken } = require("../config/paypal");
@@ -24,6 +25,18 @@ class PaymentService {
         console.log("Here is the device id " , device_id);
 
         return await stripe.paymentIntents.create({
+            amount,
+            currency: "usd",
+            payment_method_types: ["card"],
+            statement_descriptor: "SIMTLV - eSIM&Sim",
+            metadata: { userId, productType, paymentType , planName , planId , flowVersion: "v2" , device_id},
+        });
+    }
+    async createStripeTestPaymentIntent({ amount, userId, productType, paymentType , planName , planId , device_id }) {
+
+        console.log("Here is the device id " , device_id);
+
+        return await stripeTest.paymentIntents.create({
             amount,
             currency: "usd",
             payment_method_types: ["card"],
