@@ -40,7 +40,7 @@ class PaymentService {
             amount,
             currency: "usd",
             payment_method_types: ["card"],
-            statement_descriptor: "SIMTLV - eSIM&Sim",
+            // statement_descriptor: "SIMTLV - eSIM&Sim",
             metadata: { userId, productType, paymentType , planName , planId , flowVersion: "v2" , device_id},
         });
     }
