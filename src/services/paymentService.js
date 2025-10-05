@@ -597,22 +597,6 @@ async createStripePaymentIntent({ amount, userId, productType, paymentType, plan
             });
             console.log("History entry added for TopUp");
 
-            // ------------------- STEP 12: Save Transaction -------------------
-            await db.collection("transactions").add({
-                userId: metadata.userId || "unknown",
-                amount: usdAmount,
-                transactionId: id,
-                transactionTime: new Date(created * 1000),
-                isUsed: true,
-                provider: "stripe",
-                productType,
-                paymentType,
-            });
-
-
-
-            // GigaBoost 7GB 30Days Zone 1
-
 
             const previousTxSnap = await db
                 .collection("transactions")
@@ -695,6 +679,26 @@ async createStripePaymentIntent({ amount, userId, productType, paymentType, plan
                     }
                 }
             }
+
+
+            // ------------------- STEP 12: Save Transaction -------------------
+            await db.collection("transactions").add({
+                userId: metadata.userId || "unknown",
+                amount: usdAmount,
+                transactionId: id,
+                transactionTime: new Date(created * 1000),
+                isUsed: true,
+                provider: "stripe",
+                productType,
+                paymentType,
+            });
+
+
+
+            // GigaBoost 7GB 30Days Zone 1
+
+
+
 
             await Transaction.update(
                 { amount: usdAmount, product_type: productType, payment_type: paymentType },
