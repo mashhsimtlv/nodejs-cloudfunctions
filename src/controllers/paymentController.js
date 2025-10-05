@@ -37,17 +37,17 @@ exports.createStripePaymentIntent = async (req, res) => {
             device_id
         });
 
-        await eventsAPI.paymentIntentCreated({
-            provider: "stripe",
-            clientSecret: intent.client_secret,
-            amount,
-            userId,
-            productType,
-            paymentType,
-            planName,
-            planId,
-            device_id,
-        });
+        // await eventsAPI.paymentIntentCreated({
+        //     provider: "stripe",
+        //     clientSecret: intent.client_secret,
+        //     amount,
+        //     userId,
+        //     productType,
+        //     paymentType,
+        //     planName,
+        //     planId,
+        //     device_id,
+        // });
 
 
 
