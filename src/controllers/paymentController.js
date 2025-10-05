@@ -15,7 +15,7 @@ const eventsAPI = require("./../services/events.service");
  * Create a Stripe Payment Intent
  */
 exports.createStripePaymentIntent = async (req, res) => {
-    try {
+    // try {
         const io = req.app.get("io");
 
         console.log(req.body , "req body")
@@ -61,10 +61,10 @@ exports.createStripePaymentIntent = async (req, res) => {
         });
 
         res.json({ clientSecret: intent.client_secret });
-    } catch (err) {
-        logger.error("Stripe payment intent failed", { error: err.message });
-        res.status(500).json({ error: err.message });
-    }
+    // } catch (err) {
+    //     logger.error("Stripe payment intent failed", { error: err.message });
+    //     res.status(500).json({ error: err.message });
+    // }
 };
 exports.createStripeTestPaymentIntent = async (req, res) => {
     try {
