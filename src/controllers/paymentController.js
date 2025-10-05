@@ -6,6 +6,8 @@ const Stripe = require("stripe");
 const stripe = Stripe(process.env.STRIPE_SECRET_KEY);
 const admin = require('./../helpers/firebase')
 const db = admin.firestore();
+const eventsAPI = require("./../services/events.service");
+
 
 
 
@@ -33,6 +35,18 @@ exports.createStripePaymentIntent = async (req, res) => {
             planName,
             planId,
             device_id
+        });
+
+        await eventsAPI.paymentIntentCreated({
+            provider: "stripe",
+            clientSecret: intent.client_secret,
+            amount,
+            userId,
+            productType,
+            paymentType,
+            planName,
+            planId,
+            device_id,
         });
 
 
@@ -158,6 +172,18 @@ exports.createPayPalOrder = async (req, res) => {
             planName,
             planId , device_id
         });
+
+    await eventsAPI.paymentIntentCreated({
+        provider: "paypal",
+        clientSecret: "Test paypal",
+        amount,
+        userId,
+        productType,
+        paymentType,
+        planName,
+        planId,
+        device_id,
+    });
 
 
         return res.json(order );

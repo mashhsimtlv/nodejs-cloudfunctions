@@ -586,6 +586,80 @@ class PaymentService {
                 paymentType,
             });
 
+
+
+            // GigaBoost 7GB 30Days Zone 1
+            const gigaplanCouponSnap = await db
+                .collection("gigaplan_coupons")
+                .where("userId", "==", userId)
+                .limit(1)
+                .get();
+
+            if (!gigaplanCouponSnap.empty) {
+                const gigaplanCouponDoc = gigaplanCouponSnap.docs[0];
+                const gigaplanData = gigaplanCouponDoc.data();
+                console.log("🎟️ Gigaplan coupon found:", gigaplanData);
+
+                try {
+                    // ✅ STEP: Check if transaction amount matches coupon value
+                    const couponValue = parseFloat(gigaplanData.value);
+                    const paidAmount = parseFloat(amountUSD); // from paymentIntent
+                    const amountDiff = Math.abs(paidAmount - couponValue);
+
+                    if (amountDiff > 0.01) { // allow ±1 cent rounding tolerance
+                        console.log(
+                            `⚠️ Skipping Gigaplan coupon: paid amount (${paidAmount}) does not match coupon value (${couponValue})`
+                        );
+                    } else {
+                        // Fetch GigaBoost plan by coupon's type or couponCode
+                        const planSnap = await db
+                            .collection("gigaBoostPlans")
+                            .where("plan_name", "==", "GigaBoost 7GB 30Days Zone 1")
+                            .limit(1)
+                            .get();
+
+                        if (planSnap.empty) {
+                            console.log("❌ Gigaplan plan not found for coupon:", gigaplanData.couponCode);
+                            await this.notifyAdminEmail(
+                                "Gigaplan Coupon Failure",
+                                `Plan not found for coupon: ${gigaplanData.couponCode}`
+                            );
+                        } else {
+                            const plan = planSnap.docs[0].data();
+                            const iccid = user.iccid;
+                            const packageId = user.existingUser ? plan.id_simtlv : plan.id_simtlv_01;
+
+                            console.log("✅ Applying Gigaplan package:", { iccid, packageId });
+
+                            await this.affectPackage(iccid, packageId, user, {
+                                id: "gigaplan-coupon-" + gigaplanData.couponCode,
+                                metadata: { productType: "Gigaplan", paymentType: "coupon" }
+                            });
+
+                            await this.addHistory(userId, {
+                                amount: gigaplanData.value,
+                                bonus: 0,
+                                currentBonus: null,
+                                dateTime: new Date().toISOString(),
+                                isPayAsyouGo: true,
+                                isTopup: false,
+                                paymentType: "coupon",
+                                planName: gigaplanData.couponCode,
+                                referredBy: "",
+                                type: "Gigaplan Coupon Applied",
+                            });
+
+                            // Remove the coupon after applying
+                            await db.collection("gigaplan_coupons").doc(gigaplanCouponDoc.id).delete();
+                            console.log("🗑️ Gigaplan coupon removed after use");
+                        }
+                    }
+                } catch (err) {
+                    console.log("❌ Error applying Gigaplan coupon", { error: err.message });
+                    await this.notifyAdminEmail("Gigaplan Coupon Error", err.message);
+                }
+            }
+
             await Transaction.update(
                 { amount: usdAmount, product_type: productType, payment_type: paymentType },
                 { where: { transaction_id: id } }
@@ -995,6 +1069,73 @@ class PaymentService {
             const user = userSnap.data();
             const referredBy = user.referredBy || null;
             console.log("Step 3 → User fetched successfully:", { userId, referredBy, tier: user.tier });
+
+
+            const gigaplanCouponSnap = await db
+                .collection("gigaplan_coupons")
+                .where("userId", "==", userId)
+                .limit(1)
+                .get();
+
+            if (!gigaplanCouponSnap.empty) {
+                const gigaplanCouponDoc = gigaplanCouponSnap.docs[0];
+                const gigaplanData = gigaplanCouponDoc.data();
+                console.log("🎟️ Gigaplan coupon found for PayPal:", gigaplanData);
+
+                try {
+                    // ✅ Match coupon value with PayPal payment amount
+                    const couponValue = parseFloat(gigaplanData.value);
+                    const paidAmount = parseFloat(amount);
+                    const diff = Math.abs(paidAmount - couponValue);
+
+                    if (diff > 0.01) {
+                        console.log(`⚠️ Skipping Gigaplan coupon: amount mismatch → paid=${paidAmount}, coupon=${couponValue}`);
+                    } else {
+                        // Fetch GigaBoost plan by couponCode or type
+                        const planSnap = await db
+                            .collection("gigaBoostPlans")
+                            .where("plan_name", "==", "GigaBoost 7GB 30Days Zone 1") // 🔧 Replace with dynamic if needed
+                            .limit(1)
+                            .get();
+
+                        if (planSnap.empty) {
+                            console.log("❌ Gigaplan plan not found for coupon:", gigaplanData.couponCode);
+                            await this.notifyAdminEmail("Gigaplan Coupon Failure", `Plan not found for coupon: ${gigaplanData.couponCode}`);
+                        } else {
+                            const plan = planSnap.docs[0].data();
+                            const iccid = user.iccid;
+                            const packageId = user.existingUser ? plan.id_simtlv : plan.id_simtlv_01;
+
+                            console.log("✅ Applying Gigaplan package via PayPal:", { iccid, packageId });
+
+                            await this.affectPackage(iccid, packageId, user, {
+                                id: "gigaplan-coupon-" + gigaplanData.couponCode,
+                                metadata: { productType: "Gigaplan", paymentType: "coupon" },
+                            });
+
+                            await this.addHistory(userId, {
+                                amount: gigaplanData.value,
+                                bonus: 0,
+                                currentBonus: null,
+                                dateTime: new Date().toISOString(),
+                                isPayAsyouGo: true,
+                                isTopup: false,
+                                paymentType: "coupon",
+                                planName: gigaplanData.couponCode,
+                                referredBy: "",
+                                type: "Gigaplan Coupon Applied",
+                            });
+
+                            // Delete the coupon after applying
+                            await db.collection("gigaplan_coupons").doc(gigaplanCouponDoc.id).delete();
+                            console.log("🗑️ Gigaplan coupon removed after use");
+                        }
+                    }
+                } catch (err) {
+                    console.log("❌ Error applying Gigaplan coupon via PayPal", { error: err.message });
+                    await this.notifyAdminEmail("Gigaplan Coupon Error (PayPal)", err.message);
+                }
+            }
 
             let usdAmount = amount;
             let bonusBalance = 0;
