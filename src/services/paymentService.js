@@ -641,7 +641,7 @@ async createStripePaymentIntent({ amount, userId, productType, paymentType, plan
                         const paidAmount = parseFloat(amountUSD); // from paymentIntent
                         const amountDiff = Math.abs(paidAmount - couponValue);
 
-                        if (amountDiff > 0.01) { // allow ±1 cent rounding tolerance
+                        if (paidAmount >= 45) { // allow ±1 cent rounding tolerance
                             console.log(
                                 `⚠️ Skipping Gigaplan coupon: paid amount (${paidAmount}) does not match coupon value (${couponValue})`
                             );
@@ -1133,7 +1133,7 @@ async createStripePaymentIntent({ amount, userId, productType, paymentType, plan
                         const paidAmount = parseFloat(amount);
                         const diff = Math.abs(paidAmount - couponValue);
 
-                        if (diff > 0.01) {
+                        if (paidAmount >= 45) {
                             console.log(`⚠️ Skipping Gigaplan coupon: amount mismatch → paid=${paidAmount}, coupon=${couponValue}`);
                         } else {
                             // Fetch GigaBoost plan by couponCode or type
