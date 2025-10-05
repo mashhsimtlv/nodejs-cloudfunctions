@@ -20,18 +20,41 @@ class PaymentService {
     /**
      * Create Stripe PaymentIntent
      */
-    async createStripePaymentIntent({ amount, userId, productType, paymentType , planName , planId , device_id }) {
 
-        console.log("Here is the device id " , device_id);
 
+async createStripePaymentIntent({ amount, userId, productType, paymentType, planName, planId, device_id }) {
+        console.log("Here is the device id ", device_id);
+
+        // ✅ Use your fetch user method
+        //const user = await this.fetchUser(userId);
+	const userRef = db.collection("app-registered-users").doc(userId);
+	const userSnap = await userRef.get();
+	const user = userSnap.data();
+        if (!user) {
+            throw new Error("User not found");
+        }
+
+        const email = user.email || "";
+        console.log("Fetched user:", { userId, email });
+
+        // ✅ Block emails with boticuk.com domain
+        if (email.toLowerCase().includes("@boticuk.com")) {
+//if (email.toLowerCase().includes("@gmail.com")) {
+            console.log("Blocked payment intent for boticuk.com domain:", email);
+            return { blocked: true, message: "Payments are not allowed for this email domain." };
+        }
+
+        // ✅ Proceed with Stripe PaymentIntent
         return await stripe.paymentIntents.create({
             amount,
             currency: "usd",
             payment_method_types: ["card"],
             statement_descriptor: "SIMTLV - eSIM&Sim",
-            metadata: { userId, productType, paymentType , planName , planId , flowVersion: "v2" , device_id},
+            metadata: { userId, productType, paymentType, planName, planId, flowVersion: "v2", device_id },
         });
     }
+
+
     async createStripeTestPaymentIntent({ amount, userId, productType, paymentType , planName , planId , device_id }) {
 
         console.log("Here is the device id " , device_id);
