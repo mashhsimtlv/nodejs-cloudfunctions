@@ -150,7 +150,7 @@ async createStripePaymentIntent({ amount, userId, productType, paymentType, plan
                     try {
                         await axios.post(
                             "https://app-link.simtlv.co.il/api/affiliates/get-payment-confirmation",
-                            {device_id},
+                            {device_id , amountUSD},
                             {headers: {"Content-Type": "application/json"}}
                         );
                         console.log("Affiliate payment confirmation triggered:", device_id);
@@ -1148,7 +1148,7 @@ if(device_id) {
         try {
             await axios.post(
                 "https://app-link.simtlv.co.il/api/affiliates/get-payment-confirmation",
-                {device_id},
+                {device_id , amount},
                 {headers: {"Content-Type": "application/json"}}
             );
             console.log("Affiliate payment confirmation triggered:", device_id);
