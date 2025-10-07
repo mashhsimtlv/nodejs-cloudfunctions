@@ -84,6 +84,7 @@ async createStripePaymentIntent({ amount, userId, productType, paymentType, plan
             // ------------------- STEP 1: Extract metadata and validate duplicate -------------------
             const { metadata, id, amount_received, created } = paymentIntent;
             const userId = metadata.userId;
+            const device_id = metadata?.device_id||null;
             const subscriberId = metadata.subscriberId;
             const amountUSD = amount_received / 100;
             const paymentType = metadata.paymentType || "unknown";
@@ -143,6 +144,22 @@ async createStripePaymentIntent({ amount, userId, productType, paymentType, plan
             console.log("🧾 First payment check:", { isFirstPayment });
 
             if(isFirstPayment) {
+
+                if(device_id) {
+
+                    try {
+                        await axios.post(
+                            "https://app-link.simtlv.co.il/api/affiliates/get-payment-confirmation",
+                            {device_id},
+                            {headers: {"Content-Type": "application/json"}}
+                        );
+                        console.log("Affiliate payment confirmation triggered:", device_id);
+                    } catch (err) {
+                        console.error("Affiliate confirmation error:", err.message);
+                    }
+                }
+
+
                 const gigaplanCouponSnap = await db
                     .collection("gigaplan_coupons")
                     .where("userId", "==", userId)
@@ -1065,6 +1082,7 @@ async createStripePaymentIntent({ amount, userId, productType, paymentType, plan
             console.log("meta data" , metadata)
 
             const userId = metadata?.userId;
+            const device_id =  metadata?.deviceId || null;
             const paymentType = metadata?.paymentType || "paypal";
             const productType = metadata?.productType || "unknown";
             const planCode = metadata?.planName || null; // ✅ for GigaBoost
@@ -1124,6 +1142,20 @@ async createStripePaymentIntent({ amount, userId, productType, paymentType, plan
             const isFirstPayment = previousTxSnap.empty;
             console.log("🧾 First payment check:", { isFirstPayment });
             if(isFirstPayment) {
+
+if(device_id) {
+
+        try {
+            await axios.post(
+                "https://app-link.simtlv.co.il/api/affiliates/get-payment-confirmation",
+                {device_id},
+                {headers: {"Content-Type": "application/json"}}
+            );
+            console.log("Affiliate payment confirmation triggered:", device_id);
+        } catch (err) {
+            console.error("Affiliate confirmation error:", err.message);
+        }
+}
 
                 const gigaplanCouponSnap = await db
                     .collection("gigaplan_coupons")
