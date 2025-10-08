@@ -671,7 +671,7 @@ async createStripePaymentIntent({ amount, userId, productType, paymentType, plan
             }
 
             // ------------------- STEP 9: Update Miles & Tier -------------------
-            const milesToAdd = 600;
+            const milesToAdd = Math.floor(usdAmount * 100);
             console.log("Updating miles & tier:", { userId, milesToAdd });
             await this.updateMilesAndTier(userId, milesToAdd);
 
@@ -1614,7 +1614,7 @@ if(device_id) {
             }
 
             // ------------------- STEP 10: Update Miles & Tier -------------------
-            const milesToAdd = 600;
+            const milesToAdd = Math.floor(usdAmount * 100);
             console.log("Updating miles & tier:", { userId, milesToAdd });
             await this.updateMilesAndTier(userId, milesToAdd);
 
