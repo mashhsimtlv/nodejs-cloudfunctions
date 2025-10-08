@@ -21,7 +21,6 @@ class PaymentService {
      * Create Stripe PaymentIntent
      */
 
-
 async createStripePaymentIntent({ amount, userId, productType, paymentType, planName, planId, device_id }) {
         console.log("Here is the device id ", device_id);
 
@@ -431,10 +430,16 @@ async createStripePaymentIntent({ amount, userId, productType, paymentType, plan
                                     : refData.tier === "Gold"
                                         ? 6
                                         : 5;
-
+                        const milesAmount = refData.tier === "VIP"
+                            ? 800
+                            : refData.tier === "Diamond"
+                                ? 700
+                                : refData.tier === "Gold"
+                                    ? 600
+                                    : 500;
                         await db.collection("app-registered-users").doc(referrerId).update({
                             balance: admin.firestore.FieldValue.increment(refBonus),
-                            miles: admin.firestore.FieldValue.increment(600),
+                            miles: admin.firestore.FieldValue.increment(milesAmount),
                             "referralStats.pendingCount": (refData.referralStats?.pendingCount || 1) - 1,
                         });
 
@@ -596,10 +601,16 @@ async createStripePaymentIntent({ amount, userId, productType, paymentType, plan
                                 : refData.tier === "Gold"
                                     ? 6
                                     : 5;
-
+                    const milesAmount = refData.tier === "VIP"
+                        ? 800
+                        : refData.tier === "Diamond"
+                            ? 700
+                            : refData.tier === "Gold"
+                                ? 600
+                                : 500;
                     await db.collection("app-registered-users").doc(referrerId).update({
                         balance: admin.firestore.FieldValue.increment(refBonus),
-                        miles: admin.firestore.FieldValue.increment(600),
+                        miles: admin.firestore.FieldValue.increment(milesAmount),
                         "referralStats.pendingCount": (refData.referralStats?.pendingCount || 1) - 1,
                     });
 
@@ -671,7 +682,15 @@ async createStripePaymentIntent({ amount, userId, productType, paymentType, plan
             }
 
             // ------------------- STEP 9: Update Miles & Tier -------------------
-            const milesToAdd = Math.floor(usdAmount * 100);
+
+                const milesValue = user.tier === "VIP"
+                ? 8
+                : user.tier === "Diamond"
+                    ? 7
+                    : user.tier === "Gold"
+                        ? 6
+                        : 5;
+            const milesToAdd = usdAmount * milesValue;
             console.log("Updating miles & tier:", { userId, milesToAdd });
             await this.updateMilesAndTier(userId, milesToAdd);
 
@@ -1381,10 +1400,16 @@ if(device_id) {
                             refData.tier === "VIP" ? 8 :
                                 refData.tier === "Diamond" ? 7 :
                                     refData.tier === "Gold" ? 6 : 5;
-
+                        const milesAmount = refData.tier === "VIP"
+                            ? 800
+                            : refData.tier === "Diamond"
+                                ? 700
+                                : refData.tier === "Gold"
+                                    ? 600
+                                    : 500;
                         await db.collection("app-registered-users").doc(referrerId).update({
                             balance: admin.firestore.FieldValue.increment(refBonus),
-                            miles: admin.firestore.FieldValue.increment(600),
+                            miles: admin.firestore.FieldValue.increment(milesAmount),
                             "referralStats.pendingCount": (refData.referralStats?.pendingCount || 1) - 1,
                         });
 
@@ -1554,10 +1579,17 @@ if(device_id) {
                                 : refData.tier === "Gold"
                                     ? 6
                                     : 5;
+                    const milesAmount = refData.tier === "VIP"
+                        ? 800
+                        : refData.tier === "Diamond"
+                            ? 700
+                            : refData.tier === "Gold"
+                                ? 600
+                                : 500;
 
                     await db.collection("app-registered-users").doc(referrerId).update({
                         balance: admin.firestore.FieldValue.increment(refBonus),
-                        miles: admin.firestore.FieldValue.increment(600),
+                        miles: admin.firestore.FieldValue.increment(milesAmount),
                         "referralStats.pendingCount": (refData.referralStats?.pendingCount || 1) - 1,
                     });
 
@@ -1614,7 +1646,14 @@ if(device_id) {
             }
 
             // ------------------- STEP 10: Update Miles & Tier -------------------
-            const milesToAdd = Math.floor(usdAmount * 100);
+            const milesValue = user.tier === "VIP"
+                ? 8
+                : user.tier === "Diamond"
+                    ? 7
+                    : user.tier === "Gold"
+                        ? 6
+                        : 5;
+            const milesToAdd = usdAmount * milesValue;
             console.log("Updating miles & tier:", { userId, milesToAdd });
             await this.updateMilesAndTier(userId, milesToAdd);
 
