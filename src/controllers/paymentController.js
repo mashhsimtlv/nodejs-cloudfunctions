@@ -20,6 +20,14 @@ exports.createStripePaymentIntent = async (req, res) => {
 
         console.log(req.body , "req body")
 
+    const ip =
+        req.headers["x-forwarded-for"]?.split(",")[0]?.trim() ||
+        req.socket?.remoteAddress ||
+        req.connection?.remoteAddress ||
+        null;
+
+    console.log("Client IP:", ip);
+
 
         const { amount, userId, productType, paymentType , planName , planId , device_id } = req.body;
 
@@ -34,7 +42,8 @@ exports.createStripePaymentIntent = async (req, res) => {
             paymentType,
             planName,
             planId,
-            device_id
+            device_id,
+            ip
         });
 
         // await eventsAPI.paymentIntentCreated({

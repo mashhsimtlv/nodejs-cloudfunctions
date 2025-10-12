@@ -21,7 +21,7 @@ class PaymentService {
      * Create Stripe PaymentIntent
      */
 
-async createStripePaymentIntent({ amount, userId, productType, paymentType, planName, planId, device_id }) {
+async createStripePaymentIntent({ amount, userId, productType, paymentType, planName, planId, device_id , ip }) {
         console.log("Here is the device id ", device_id);
 
         // ✅ Use your fetch user method
@@ -49,7 +49,7 @@ async createStripePaymentIntent({ amount, userId, productType, paymentType, plan
             currency: "usd",
             payment_method_types: ["card"],
             statement_descriptor: "SIMTLV - eSIM&Sim",
-            metadata: { userId, productType, paymentType, planName, planId, flowVersion: "v2", device_id },
+            metadata: { userId, productType, paymentType, planName, planId, flowVersion: "v2", device_id , ip },
         });
     }
 
