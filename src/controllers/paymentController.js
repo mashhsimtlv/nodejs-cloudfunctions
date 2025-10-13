@@ -190,17 +190,17 @@ exports.createPayPalOrder = async (req, res) => {
             planId , device_id,ip
         });
 
-    await eventsAPI.paymentIntentCreated({
-        provider: "paypal",
-        clientSecret: "Test paypal",
-        amount,
-        userId,
-        productType,
-        paymentType,
-        planName,
-        planId,
-        device_id,
-    });
+    // await eventsAPI.paymentIntentCreated({
+    //     provider: "paypal",
+    //     clientSecret: "Test paypal",
+    //     amount,
+    //     userId,
+    //     productType,
+    //     paymentType,
+    //     planName,
+    //     planId,
+    //     device_id,
+    // });
 
 
         return res.json(order );
