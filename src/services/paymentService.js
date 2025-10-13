@@ -84,6 +84,7 @@ async createStripePaymentIntent({ amount, userId, productType, paymentType, plan
             const { metadata, id, amount_received, created } = paymentIntent;
             const userId = metadata.userId;
             const device_id = metadata?.device_id||null;
+            const ip = metadata?.ip||null;
             const subscriberId = metadata.subscriberId;
             const amountUSD = amount_received / 100;
             const paymentType = metadata.paymentType || "unknown";
@@ -144,12 +145,12 @@ async createStripePaymentIntent({ amount, userId, productType, paymentType, plan
 
             if(isFirstPayment) {
 
-                if(device_id) {
+                if(device_id || ip) {
 
                     try {
                         await axios.post(
                             "https://app-link.simtlv.co.il/api/affiliates/get-payment-confirmation",
-                            {device_id , amountUSD},
+                            {device_id , amountUSD , ip , email:user?.email},
                             {headers: {"Content-Type": "application/json"}}
                         );
                         console.log("Affiliate payment confirmation triggered:", device_id);
@@ -1026,11 +1027,11 @@ async createStripePaymentIntent({ amount, userId, productType, paymentType, plan
         }
     }
 
-    async createPayPalOrder({ amount, currency, userId, productType, paymentType , planName, planId , device_id }) {
+    async createPayPalOrder({ amount, currency, userId, productType, paymentType , planName, planId , device_id , ip }) {
         const accessToken = await getPayPalAccessToken();
 
         // ✅ Store metadata inside `custom_id` (same as your Cloud Function)
-        const customId = JSON.stringify({ userId, productType, paymentType , planName, planId , flowVersion: "v2" , device_id});
+        const customId = JSON.stringify({ userId, productType, paymentType , planName, planId , flowVersion: "v2" , device_id , ip});
 
         const response = await axios.post(
             `${process.env.PAYPAL_URL}/v2/checkout/orders`,
@@ -1102,6 +1103,7 @@ async createStripePaymentIntent({ amount, userId, productType, paymentType, plan
 
             const userId = metadata?.userId;
             const device_id =  metadata?.deviceId || null;
+            const ip =  metadata?.ip || null;
             const paymentType = metadata?.paymentType || "paypal";
             const productType = metadata?.productType || "unknown";
             const planCode = metadata?.planName || null; // ✅ for GigaBoost
@@ -1162,12 +1164,12 @@ async createStripePaymentIntent({ amount, userId, productType, paymentType, plan
             console.log("🧾 First payment check:", { isFirstPayment });
             if(isFirstPayment) {
 
-if(device_id) {
+if(device_id || ip) {
 
         try {
             await axios.post(
                 "https://app-link.simtlv.co.il/api/affiliates/get-payment-confirmation",
-                {device_id , amount},
+                {device_id , amount , ip , email: user?.email},
                 {headers: {"Content-Type": "application/json"}}
             );
             console.log("Affiliate payment confirmation triggered:", device_id);

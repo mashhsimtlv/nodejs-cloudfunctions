@@ -172,6 +172,14 @@ exports.createPayPalOrder = async (req, res) => {
 
         console.log(req.body , "req body for paypal ")
 
+    const ip =
+        req.headers["x-forwarded-for"]?.split(",")[0]?.trim() ||
+        req.socket?.remoteAddress ||
+        req.connection?.remoteAddress ||
+        null;
+
+    console.log("Client IP:", ip);
+
         const order = await paymentService.createPayPalOrder({
             amount,
             currency,
@@ -179,7 +187,7 @@ exports.createPayPalOrder = async (req, res) => {
             productType,
             paymentType,
             planName,
-            planId , device_id
+            planId , device_id,ip
         });
 
     await eventsAPI.paymentIntentCreated({
