@@ -461,7 +461,6 @@ async createStripePaymentIntent({ amount, userId, productType, paymentType, plan
 
                         await userRef.update({
                             balance: admin.firestore.FieldValue.increment(5),
-                            miles: admin.firestore.FieldValue.increment(600),
                             referralUsed: true,
                         });
 
@@ -1431,7 +1430,6 @@ if(device_id || ip) {
 
                         await userRef.update({
                             balance: admin.firestore.FieldValue.increment(5),
-                            miles: admin.firestore.FieldValue.increment(600),
                             referralUsed: true,
                         });
 
@@ -1612,7 +1610,6 @@ if(device_id || ip) {
 
                     await userRef.update({
                         balance: admin.firestore.FieldValue.increment(5),
-                        miles: admin.firestore.FieldValue.increment(600),
                         referralUsed: true,
                     });
 
