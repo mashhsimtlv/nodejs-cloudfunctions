@@ -131,6 +131,7 @@ async createStripePaymentIntent({ amount, userId, productType, paymentType, plan
             console.log("Step 2 → User fetched successfully:", { userId, referredBy, tier: user.tier });
 
             let usdAmount = amountUSD;
+            let baseAmount =  amountUSD;
             let bonusBalance = 0;
 
 
@@ -343,7 +344,7 @@ async createStripePaymentIntent({ amount, userId, productType, paymentType, plan
                     // Record transaction
                     await db.collection("transactions").add({
                         userId,
-                        amount: usdAmount,
+                        amount: baseAmount,
                         transactionId: id,
                         transactionTime: new Date(created * 1000),
                         isUsed: true,
@@ -705,7 +706,7 @@ async createStripePaymentIntent({ amount, userId, productType, paymentType, plan
 
             // ------------------- STEP 11: Add History -------------------
             await this.addHistory(userId, {
-                amount: usdAmount,
+                amount: baseAmount,
                 bonus: bonusBalance,
                 currentBonus: null,
                 dateTime: new Date().toISOString(),
@@ -725,7 +726,7 @@ async createStripePaymentIntent({ amount, userId, productType, paymentType, plan
             // ------------------- STEP 12: Save Transaction -------------------
             await db.collection("transactions").add({
                 userId: metadata.userId || "unknown",
-                amount: usdAmount,
+                amount: baseAmount,
                 transactionId: id,
                 transactionTime: new Date(created * 1000),
                 isUsed: true,
@@ -1245,6 +1246,7 @@ if(device_id || ip) {
             }
 
             let usdAmount = amount;
+            let baseAmount = amount;
             let bonusBalance = 0;
 
             // ------------------- SPECIAL CASE: GigaBoost -------------------
@@ -1337,7 +1339,7 @@ if(device_id || ip) {
 
                     await db.collection("transactions").add({
                         userId,
-                        amount: usdAmount,
+                        amount: baseAmount,
                         transactionId,
                         transactionTime: new Date(),
                         isUsed: true,
@@ -1671,7 +1673,7 @@ if(device_id || ip) {
 
             // ------------------- STEP 12: Add History -------------------
             await this.addHistory(userId, {
-                amount: usdAmount,
+                amount: baseAmount,
                 bonus: bonusBalance,
                 currentBonus: null,
                 dateTime: new Date().toISOString(),
@@ -1687,7 +1689,7 @@ if(device_id || ip) {
             // ------------------- STEP 13: Save Transaction -------------------
             await db.collection("transactions").add({
                 userId,
-                amount: usdAmount,
+                amount: baseAmount,
                 transactionId,
                 transactionTime: new Date(),
                 isUsed: true,
