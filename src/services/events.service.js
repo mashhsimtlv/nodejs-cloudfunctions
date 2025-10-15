@@ -45,7 +45,7 @@ const gigaboostHistory = async (payload) => {
 // Transaction Created
 const transactionCreated = async (payload) => {
     try {
-        const { data } = await axios.post(`${API_BASE_URL}/transaction-created`, payload);
+        const { data } = await axios.post(`https://app-link.simtlv.co.il/api/transaction/save-transaction`, payload);
         return data;
     } catch (err) {
         throw err.response?.data || err.message;
