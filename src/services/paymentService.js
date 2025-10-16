@@ -21,26 +21,26 @@ class PaymentService {
      * Create Stripe PaymentIntent
      */
 
-async createStripePaymentIntent({ amount, userId, productType, paymentType, planName, planId, device_id , ip }) {
+    async createStripePaymentIntent({amount, userId, productType, paymentType, planName, planId, device_id, ip}) {
         console.log("Here is the device id ", device_id);
 
         // ✅ Use your fetch user method
         //const user = await this.fetchUser(userId);
-	const userRef = db.collection("app-registered-users").doc(userId);
-	const userSnap = await userRef.get();
-	const user = userSnap.data();
+        const userRef = db.collection("app-registered-users").doc(userId);
+        const userSnap = await userRef.get();
+        const user = userSnap.data();
         if (!user) {
             throw new Error("User not found");
         }
 
         const email = user.email || "";
-        console.log("Fetched user:", { userId, email });
+        console.log("Fetched user:", {userId, email});
 
         // ✅ Block emails with boticuk.com domain
         if (email.toLowerCase().includes("@boticuk.com")) {
 //if (email.toLowerCase().includes("@gmail.com")) {
             console.log("Blocked payment intent for boticuk.com domain:", email);
-            return { blocked: true, message: "Payments are not allowed for this email domain." };
+            return {blocked: true, message: "Payments are not allowed for this email domain."};
         }
 
         // ✅ Proceed with Stripe PaymentIntent
@@ -49,21 +49,21 @@ async createStripePaymentIntent({ amount, userId, productType, paymentType, plan
             currency: "usd",
             payment_method_types: ["card"],
             statement_descriptor: "SIMTLV - eSIM&Sim",
-            metadata: { userId, productType, paymentType, planName, planId, flowVersion: "v2", device_id , ip },
+            metadata: {userId, productType, paymentType, planName, planId, flowVersion: "v2", device_id, ip},
         });
     }
 
 
-    async createStripeTestPaymentIntent({ amount, userId, productType, paymentType , planName , planId , device_id }) {
+    async createStripeTestPaymentIntent({amount, userId, productType, paymentType, planName, planId, device_id}) {
 
-        console.log("Here is the device id " , device_id);
+        console.log("Here is the device id ", device_id);
 
         return await stripeTest.paymentIntents.create({
             amount,
             currency: "usd",
             payment_method_types: ["card"],
             statement_descriptor: "SIMTLV - eSIM&Sim",
-            metadata: { userId, productType, paymentType , planName , planId , flowVersion: "v2" , device_id},
+            metadata: {userId, productType, paymentType, planName, planId, flowVersion: "v2", device_id},
         });
     }
 
@@ -81,20 +81,20 @@ async createStripePaymentIntent({ amount, userId, productType, paymentType, plan
             console.log("===== Stripe webhook started =====");
 
             // ------------------- STEP 1: Extract metadata and validate duplicate -------------------
-            const { metadata, id, amount_received, created } = paymentIntent;
+            const {metadata, id, amount_received, created} = paymentIntent;
             const userId = metadata.userId;
-            const device_id = metadata?.device_id||null;
-            const ip = metadata?.ip||null;
+            const device_id = metadata?.device_id || null;
+            const ip = metadata?.ip || null;
             const subscriberId = metadata.subscriberId;
             const amountUSD = amount_received / 100;
             const paymentType = metadata.paymentType || "unknown";
             const productType = metadata.productType || "unknown";
 
-            console.log("Step 1 → Extracted metadata:", { userId, subscriberId, amountUSD, paymentType, productType });
+            console.log("Step 1 → Extracted metadata:", {userId, subscriberId, amountUSD, paymentType, productType});
 
 
             const [result, createdRow] = await Transaction.findOrCreate({
-                where: { transaction_id: id },
+                where: {transaction_id: id},
                 defaults: {
                     user_id: userId,
                     transaction_id: id,
@@ -115,7 +115,7 @@ async createStripePaymentIntent({ amount, userId, productType, paymentType, plan
             const txRef = db.collection("transactions").where("transactionId", "==", id).limit(1);
             const txSnap = await txRef.get();
             if (!txSnap.empty) {
-                console.log("Duplicate Stripe webhook ignored", { transactionId: id, userId });
+                console.log("Duplicate Stripe webhook ignored", {transactionId: id, userId});
                 return;
             }
 
@@ -123,15 +123,15 @@ async createStripePaymentIntent({ amount, userId, productType, paymentType, plan
             const userRef = db.collection("app-registered-users").doc(userId);
             const userSnap = await userRef.get();
             if (!userSnap.exists) {
-                console.log("Stripe webhook: user not found", { userId });
+                console.log("Stripe webhook: user not found", {userId});
                 return;
             }
             const user = userSnap.data();
             const referredBy = user.referredBy || null;
-            console.log("Step 2 → User fetched successfully:", { userId, referredBy, tier: user.tier });
+            console.log("Step 2 → User fetched successfully:", {userId, referredBy, tier: user.tier});
 
             let usdAmount = amountUSD;
-            let baseAmount =  amountUSD;
+            let baseAmount = amountUSD;
             let bonusBalance = 0;
 
 
@@ -142,16 +142,16 @@ async createStripePaymentIntent({ amount, userId, productType, paymentType, plan
                 .get();
 
             const isFirstPayment = previousTxSnap.empty;
-            console.log("🧾 First payment check:", { isFirstPayment });
+            console.log("🧾 First payment check:", {isFirstPayment});
 
-            if(isFirstPayment) {
+            if (isFirstPayment) {
 
-                if(device_id || ip) {
+                if (device_id || ip) {
 
                     try {
                         await axios.post(
                             "https://app-link.simtlv.co.il/api/affiliates/get-payment-confirmation",
-                            {device_id , amountUSD , ip , email:user?.email , user_id:userId , id: id },
+                            {device_id, amountUSD, ip, email: user?.email, user_id: userId, id: id},
                             {headers: {"Content-Type": "application/json"}}
                         );
                         console.log("Affiliate payment confirmation triggered:", device_id);
@@ -234,7 +234,6 @@ async createStripePaymentIntent({ amount, userId, productType, paymentType, plan
             }
 
 
-
             // ------------------- SPECIAL CASE: GigaBoost -------------------
             if (productType === "GigaBoost") {
                 console.log("Step 3 → Processing GigaBoost payment");
@@ -246,17 +245,17 @@ async createStripePaymentIntent({ amount, userId, productType, paymentType, plan
 
                 let simtlvGigaToken = user.existingUser ? await getMainToken() : await getToken();
 
-                console.log(simtlvGigaToken , "token before the active iccid sim")
+                console.log(simtlvGigaToken, "token before the active iccid sim")
 
                 let sendSocketForPlan = true;
 
                 let emitPayload = null;
 
-                if(user.isActive === false){
+                if (user.isActive === false) {
                     sendSocketForPlan = false;
                     console.log("SIm is not active , going to activate the sim in GIGABOOST PLAN")
                     simtlvGigaToken = await getMainToken();
-                    console.log(simtlvGigaToken , "simtlv giga token")
+                    console.log(simtlvGigaToken, "simtlv giga token")
                     let iccidResultGiga = await iccidService.activeIccid({
                         uid: userId,
                         amount: usdAmount,
@@ -264,7 +263,7 @@ async createStripePaymentIntent({ amount, userId, productType, paymentType, plan
                         transactionId: id,
                         simtlvToken: simtlvGigaToken,
                     });
-                    if(!iccidGiga){
+                    if (!iccidGiga) {
                         iccidGiga = iccidResultGiga.iccid;
                         console.log("ICCID activation result:", iccidGiga);
                     }
@@ -276,7 +275,7 @@ async createStripePaymentIntent({ amount, userId, productType, paymentType, plan
                     })
 
 
-                    const subscriberID =  subscriberResult.getSingleSubscriber.sim.subscriberId;
+                    const subscriberID = subscriberResult.getSingleSubscriber.sim.subscriberId;
 
 
                     emitPayload = {
@@ -315,16 +314,15 @@ async createStripePaymentIntent({ amount, userId, productType, paymentType, plan
                 }
 
 
-
                 const plan = planSnap.docs[0].data();
                 const packageId = user.existingUser ? plan.id_simtlv : plan.id_simtlv_01;
-                console.log("Plan resolved:", { planCode, planName: plan.plan_name, packageId });
+                console.log("Plan resolved:", {planCode, planName: plan.plan_name, packageId});
 
                 try {
-                    console.log("Calling affectPackageService with:", { iccidGiga, packageId });
-                    await this.affectPackage(iccidGiga, packageId, user , paymentIntent);
+                    console.log("Calling affectPackageService with:", {iccidGiga, packageId});
+                    await this.affectPackage(iccidGiga, packageId, user, paymentIntent);
 
-                    console.log("GigaBoost package applied successfully", { iccidGiga, packageId });
+                    console.log("GigaBoost package applied successfully", {iccidGiga, packageId});
 
                     // Add history
                     await this.addHistory(userId, {
@@ -354,17 +352,17 @@ async createStripePaymentIntent({ amount, userId, productType, paymentType, plan
                     });
 
                     await Transaction.update(
-                        { amount: usdAmount, product_type: productType, payment_type: paymentType },
-                        { where: { transaction_id: id } }
+                        {amount: usdAmount, product_type: productType, payment_type: paymentType},
+                        {where: {transaction_id: id}}
                     );
 
-                    console.log("Transaction recorded for GigaBoost:", { userId, transactionId: id });
+                    console.log("Transaction recorded for GigaBoost:", {userId, transactionId: id});
 
                 } catch (err) {
-                    console.log("❌ Error applying GigaBoost package", { error: err.message, userId });
+                    console.log("❌ Error applying GigaBoost package", {error: err.message, userId});
                     await this.notifyAdminEmail("Stripe GigaBoost Failure", err.message);
                 }
-                if(!emitPayload) {
+                if (!emitPayload) {
                     emitPayload = {
                         status: {
                             code: 200,
@@ -411,8 +409,8 @@ async createStripePaymentIntent({ amount, userId, productType, paymentType, plan
 
 
                 if (referredBy && !user.referralUsed) {
-                    console.log("Referral detected → applying bonus for", { referredBy, userId });
-                    console.log("going to apply for referal and reffered by "+referredBy+" and reffered to "+userId );
+                    console.log("Referral detected → applying bonus for", {referredBy, userId});
+                    console.log("going to apply for referal and reffered by " + referredBy + " and reffered to " + userId);
                     const referrerSnap = await db
                         .collection("app-registered-users")
                         .where("referralCode", "==", referredBy)
@@ -487,16 +485,16 @@ async createStripePaymentIntent({ amount, userId, productType, paymentType, plan
                             );
                         }
 
-                        console.log("ICCID found for the user in reffer case"  , iccid)
-                        console.log("Found the iccid for refered by user " , refData.iccid)
+                        console.log("ICCID found for the user in reffer case", iccid)
+                        console.log("Found the iccid for refered by user ", refData.iccid)
 
                         if (iccidGiga) {
                             let euroAmount = this.usdToEur(5);
                             let reffererIccid = refData.iccid;
-                            console.log("Adding balance to Referer :", { euroAmount });
+                            console.log("Adding balance to Referer :", {euroAmount});
                             await this.addSimtlvBalance(iccidGiga, user, euroAmount, io, simtlvGigaToken, "pending");
                             let simtlvRefToken = refData.existingUser ? await getMainToken() : await getToken();
-                            console.log("Adding balance to Referered By  :", { euroAmount });
+                            console.log("Adding balance to Referered By  :", {euroAmount});
                             await this.addSimtlvBalance(reffererIccid, refData, euroAmount, io, simtlvRefToken, "pending");
                         }
 
@@ -507,7 +505,7 @@ async createStripePaymentIntent({ amount, userId, productType, paymentType, plan
                 await axios.post(
                     "https://n8n-sys.simtlv.co.il/webhook/21731742-dd24-461c-8c42-9cfafb5064f7",
                     payload,
-                    { headers: { "Content-Type": "application/json" } }
+                    {headers: {"Content-Type": "application/json"}}
                 );
 
                 console.log("===== Stripe webhook ended (GigaBoost) =====");
@@ -517,14 +515,14 @@ async createStripePaymentIntent({ amount, userId, productType, paymentType, plan
 
             // ------------------- STEP 3: Coupon reset if used -------------------
             if (user.couponValue && user.couponValue > 0 && user.couponType) {
-                console.log("Coupon detected → resetting:", { type: user.couponType, value: user.couponValue });
+                console.log("Coupon detected → resetting:", {type: user.couponType, value: user.couponValue});
 
                 if (user.couponType === "percentageDiscount") {
                     const originalAmount = usdAmount / (1 - (user.couponValue / 100));
                     usdAmount = originalAmount;
                     console.log("Coupon reversed discount → new amount:", usdAmount);
                 }
-                await userRef.update({ couponValue: 0, couponType: null });
+                await userRef.update({couponValue: 0, couponType: null});
                 console.log("Coupon reset completed");
             }
 
@@ -533,7 +531,7 @@ async createStripePaymentIntent({ amount, userId, productType, paymentType, plan
                 console.log("Next Topup Bonus detected → applying:", user.nextTopupBonus);
 
                 usdAmount += user.nextTopupBonus.value;
-                await userRef.update({ nextTopupBonus: admin.firestore.FieldValue.delete() });
+                await userRef.update({nextTopupBonus: admin.firestore.FieldValue.delete()});
 
                 await this.addHistory(userId, {
                     amount: user.nextTopupBonus.value,
@@ -552,12 +550,12 @@ async createStripePaymentIntent({ amount, userId, productType, paymentType, plan
             }
 
             // ------------------- STEP 5: Tier Bonus -------------------
-            const tierRates = { silver: 0.05, gold: 0.07, diamond: 0.08, vip: 0.1 };
+            const tierRates = {silver: 0.05, gold: 0.07, diamond: 0.08, vip: 0.1};
             const rate = tierRates[user.tier] || 0;
             if (amountUSD >= 20 && rate > 0) {
                 bonusBalance = amountUSD * rate;
                 usdAmount += bonusBalance;
-                console.log("Tier bonus applied:", { tier: user.tier, bonusBalance, newAmount: usdAmount });
+                console.log("Tier bonus applied:", {tier: user.tier, bonusBalance, newAmount: usdAmount});
             }
 
             // ------------------- STEP 6: Activate ICCID if not active -------------------
@@ -581,8 +579,8 @@ async createStripePaymentIntent({ amount, userId, productType, paymentType, plan
 
             // ------------------- STEP 7: Referral Bonus -------------------
             if (referredBy && !user.referralUsed) {
-                console.log("Referral detected → applying bonus for", { referredBy, userId });
-                console.log("going to apply for referal and reffered by "+referredBy+" and reffered to "+userId );
+                console.log("Referral detected → applying bonus for", {referredBy, userId});
+                console.log("going to apply for referal and reffered by " + referredBy + " and reffered to " + userId);
                 const referrerSnap = await db
                     .collection("app-registered-users")
                     .where("referralCode", "==", referredBy)
@@ -657,16 +655,16 @@ async createStripePaymentIntent({ amount, userId, productType, paymentType, plan
                         );
                     }
 
-                    console.log("ICCID found for the user in reffer case"  , iccid)
-                    console.log("Found the iccid for refered by user " , refData.iccid)
+                    console.log("ICCID found for the user in reffer case", iccid)
+                    console.log("Found the iccid for refered by user ", refData.iccid)
 
                     if (iccid) {
                         let euroAmount = this.usdToEur(5);
                         let reffererIccid = refData.iccid;
-                        console.log("Adding balance to Referer :", { euroAmount });
+                        console.log("Adding balance to Referer :", {euroAmount});
                         await this.addSimtlvBalance(iccid, user, euroAmount, io, simtlvToken, "pending");
                         let simtlvRefToken = refData.existingUser ? await getMainToken() : await getToken();
-                        console.log("Adding balance to Referered By  :", { euroAmount });
+                        console.log("Adding balance to Referered By  :", {euroAmount});
                         await this.addSimtlvBalance(reffererIccid, refData, euroAmount, io, simtlvRefToken, "pending");
                     }
 
@@ -677,13 +675,13 @@ async createStripePaymentIntent({ amount, userId, productType, paymentType, plan
             // ------------------- STEP 8: Add Balance to ICCID -------------------
             let euroAmount = this.usdToEur(usdAmount);
             if (iccid) {
-                console.log("Adding balance to ICCID:", { iccid, euroAmount });
+                console.log("Adding balance to ICCID:", {iccid, euroAmount});
                 await this.addSimtlvBalance(iccid, user, euroAmount, io, simtlvToken, "completed");
             }
 
             // ------------------- STEP 9: Update Miles & Tier -------------------
 
-                const milesValue = user.tier === "VIP"
+            const milesValue = user.tier === "VIP"
                 ? 8
                 : user.tier === "Diamond"
                     ? 7
@@ -691,11 +689,11 @@ async createStripePaymentIntent({ amount, userId, productType, paymentType, plan
                         ? 6
                         : 5;
             const milesToAdd = usdAmount * milesValue;
-            console.log("Updating miles & tier:", { userId, milesToAdd });
+            console.log("Updating miles & tier:", {userId, milesToAdd});
             await this.updateMilesAndTier(userId, milesToAdd);
 
             // ------------------- STEP 10: Update User Balance -------------------
-            console.log("Incrementing balance for user:", { userId, usdAmount, bonusBalance });
+            console.log("Incrementing balance for user:", {userId, usdAmount, bonusBalance});
             await db.collection("app-registered-users").doc(userId).update({
                 balance: admin.firestore.FieldValue.increment(usdAmount),
             });
@@ -719,9 +717,6 @@ async createStripePaymentIntent({ amount, userId, productType, paymentType, plan
             console.log("History entry added for TopUp");
 
 
-
-
-
             // ------------------- STEP 12: Save Transaction -------------------
             await db.collection("transactions").add({
                 userId: metadata.userId || "unknown",
@@ -735,18 +730,15 @@ async createStripePaymentIntent({ amount, userId, productType, paymentType, plan
             });
 
 
-
             // GigaBoost 7GB 30Days Zone 1
 
 
-
-
             await Transaction.update(
-                { amount: usdAmount, product_type: productType, payment_type: paymentType },
-                { where: { transaction_id: id } }
+                {amount: usdAmount, product_type: productType, payment_type: paymentType},
+                {where: {transaction_id: id}}
             );
 
-            console.log("Transaction saved:", { userId, transactionId: id });
+            console.log("Transaction saved:", {userId, transactionId: id});
 
             console.log("===== Stripe transaction processed successfully =====", {
                 userId,
@@ -774,19 +766,19 @@ async createStripePaymentIntent({ amount, userId, productType, paymentType, plan
             await axios.post(
                 "https://n8n-sys.simtlv.co.il/webhook/21731742-dd24-461c-8c42-9cfafb5064f7",
                 payload,
-                { headers: { "Content-Type": "application/json" } }
+                {headers: {"Content-Type": "application/json"}}
             );
 
 
             console.log("===== Stripe webhook ended =====");
         } catch (err) {
-            console.log("❌ saveStripeTransaction error", { error: err.message });
+            console.log("❌ saveStripeTransaction error", {error: err.message});
             await this.notifyAdminEmail("Stripe Webhook Failure", err.message);
         }
     }
 
     async saveLegacyStripeTransaction(paymentIntent) {
-        const { metadata, id, amount_received, created } = paymentIntent;
+        const {metadata, id, amount_received, created} = paymentIntent;
         const userId = metadata.userId || "unknown";
         const productType = metadata.productType || "unknown";
         const paymentType = metadata.paymentType || "unknown";
@@ -803,18 +795,18 @@ async createStripePaymentIntent({ amount, userId, productType, paymentType, plan
             paymentType,
         });
 
-        console.log("✅ Legacy transaction saved:", { userId, transactionId: id });
+        console.log("✅ Legacy transaction saved:", {userId, transactionId: id});
     }
 
 
     // ------------------- Affect Package Method -------------------
-    async affectPackage(iccid, packageId, user , paymentIntent) {
-        console.log("===== AffectPackage started =====", { iccid, packageId, userId: user.uid });
+    async affectPackage(iccid, packageId, user, paymentIntent) {
+        console.log("===== AffectPackage started =====", {iccid, packageId, userId: user.uid});
 
         try {
             let simtlvToken = user.existingUser ? await getMainToken() : await getToken();
             // Call the actual service
-            console.log("Calling affectPackageService...", { iccid, packageId });
+            console.log("Calling affectPackageService...", {iccid, packageId});
 
 
             const url = `https://ocs-api.telco-vision.com:7443/ocs-custo/main/v1?token=${simtlvToken}`;
@@ -873,7 +865,7 @@ async createStripePaymentIntent({ amount, userId, productType, paymentType, plan
                 packageId,
             });
 
-            console.log("===== AffectPackage completed successfully =====", { iccid, packageId });
+            console.log("===== AffectPackage completed successfully =====", {iccid, packageId});
             return response.data;
         } catch (error) {
             console.log("❌ Error in affectPackage", {
@@ -892,7 +884,7 @@ async createStripePaymentIntent({ amount, userId, productType, paymentType, plan
      * Convert USD to EUR
      */
     usdToEur(usd) {
-        return +(usd /1.1).toFixed(2);
+        return +(usd / 1.1).toFixed(2);
     }
 
     async addHistory(userId, historyData) {
@@ -901,7 +893,7 @@ async createStripePaymentIntent({ amount, userId, productType, paymentType, plan
         });
     }
 
-    async addSimtlvBalance(iccid , user , euroAmount , io , simtlvToken , status) {
+    async addSimtlvBalance(iccid, user, euroAmount, io, simtlvToken, status) {
 
         const subscriberResult = await iccidService.getSingleSubscriber({
             iccid: iccid,
@@ -909,21 +901,21 @@ async createStripePaymentIntent({ amount, userId, productType, paymentType, plan
         })
 
 
-        const subscriberID =  subscriberResult.getSingleSubscriber.sim.subscriberId;
+        const subscriberID = subscriberResult.getSingleSubscriber.sim.subscriberId;
 
 
         const requestData = {
             modifySubscriberBalance: {
-                subscriber: { subscriberId: subscriberID },
+                subscriber: {subscriberId: subscriberID},
                 amount: euroAmount,
-                description:  "Optional description"
+                description: "Optional description"
             }
         };
 
 
         const url = `https://ocs-api.telco-vision.com:7443/ocs-custo/main/v1?token=${simtlvToken}`;
         const response = await axios.post(url, requestData, {
-            headers: { "Content-Type": "application/json" }
+            headers: {"Content-Type": "application/json"}
         });
 
 
@@ -978,7 +970,7 @@ async createStripePaymentIntent({ amount, userId, productType, paymentType, plan
             if (newMiles >= 15000) tier = "diamond";
             if (newMiles >= 30000) tier = "vip";
 
-            t.update(userRef, { miles: newMiles, tier });
+            t.update(userRef, {miles: newMiles, tier});
         });
     }
 
@@ -986,7 +978,7 @@ async createStripePaymentIntent({ amount, userId, productType, paymentType, plan
         if (!fcmToken) return;
         await admin.messaging().send({
             token: fcmToken,
-            notification: { title, body },
+            notification: {title, body},
         });
     }
 
@@ -1003,13 +995,13 @@ async createStripePaymentIntent({ amount, userId, productType, paymentType, plan
                     user: process.env.SMTP_USER || "your-email@gmail.com",
                     pass: process.env.SMTP_PASS || "your-app-password", // app password for Gmail
                 },
-                tls: { rejectUnauthorized: false }
+                tls: {rejectUnauthorized: false}
             });
 
             const mailOptions = {
                 from: '"SIMTLV System" <no-reply@simtlv.com>',
                 to: "dor@simtlv.co.il",
-                cc: ["massh@simtlv.co.il" , "rana@simtlv.co.il"],
+                cc: ["massh@simtlv.co.il", "rana@simtlv.co.il"],
                 subject,
                 html: `
       <h2>⚠️ Stripe Webhook Processing Failed</h2>
@@ -1026,11 +1018,20 @@ async createStripePaymentIntent({ amount, userId, productType, paymentType, plan
         }
     }
 
-    async createPayPalOrder({ amount, currency, userId, productType, paymentType , planName, planId , device_id , ip }) {
+    async createPayPalOrder({amount, currency, userId, productType, paymentType, planName, planId, device_id, ip}) {
         const accessToken = await getPayPalAccessToken();
 
         // ✅ Store metadata inside `custom_id` (same as your Cloud Function)
-        const customId = JSON.stringify({ userId, productType, paymentType , planName, planId , flowVersion: "v2" , device_id , ip});
+        const customId = JSON.stringify({
+            userId,
+            productType,
+            paymentType,
+            planName,
+            planId,
+            flowVersion: "v2",
+            device_id,
+            ip
+        });
 
         const response = await axios.post(
             `${process.env.PAYPAL_URL}/v2/checkout/orders`,
@@ -1079,12 +1080,12 @@ async createStripePaymentIntent({ amount, userId, productType, paymentType, plan
     // Capture PayPal Order
     async capturePayPalOrder(orderId) {
         const accessToken = await getPayPalAccessToken();
-        console.log(accessToken , "access token" , orderId)
+        console.log(accessToken, "access token", orderId)
 
         const response = await axios.post(
             `${process.env.PAYPAL_URL}/v2/checkout/orders/${orderId}/capture`,
             {},
-            { headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" } }
+            {headers: {Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json"}}
         );
 
         return response.data;
@@ -1096,13 +1097,13 @@ async createStripePaymentIntent({ amount, userId, productType, paymentType, plan
             console.log("===== PayPal transaction started =====");
 
             // ------------------- STEP 1: Extract Data & Metadata -------------------
-            const { transactionId, amount, currency, status, orderId, metadata } = data;
+            const {transactionId, amount, currency, status, orderId, metadata} = data;
 
-            console.log("meta data" , metadata)
+            console.log("meta data", metadata)
 
             const userId = metadata?.userId;
-            const device_id =  metadata?.deviceId || null;
-            const ip =  metadata?.ip || null;
+            const device_id = metadata?.deviceId || null;
+            const ip = metadata?.ip || null;
             const paymentType = metadata?.paymentType || "paypal";
             const productType = metadata?.productType || "unknown";
             const planCode = metadata?.planName || null; // ✅ for GigaBoost
@@ -1117,7 +1118,7 @@ async createStripePaymentIntent({ amount, userId, productType, paymentType, plan
             });
 
             const [result, createdRow] = await Transaction.findOrCreate({
-                where: { transaction_id: transactionId },
+                where: {transaction_id: transactionId},
                 defaults: {
                     user_id: userId,
                     transaction_id: transactionId,
@@ -1137,7 +1138,7 @@ async createStripePaymentIntent({ amount, userId, productType, paymentType, plan
             const txRef = db.collection("transactions").where("transactionId", "==", transactionId).limit(1);
             const txSnap = await txRef.get();
             if (!txSnap.empty) {
-                console.log("❌ Duplicate PayPal transaction ignored", { transactionId, userId });
+                console.log("❌ Duplicate PayPal transaction ignored", {transactionId, userId});
                 return;
             }
             console.log("Step 2 → Transaction is not duplicate");
@@ -1146,12 +1147,12 @@ async createStripePaymentIntent({ amount, userId, productType, paymentType, plan
             const userRef = db.collection("app-registered-users").doc(userId);
             const userSnap = await userRef.get();
             if (!userSnap.exists) {
-                console.log("❌ PayPal webhook: user not found", { userId });
+                console.log("❌ PayPal webhook: user not found", {userId});
                 return;
             }
             const user = userSnap.data();
             const referredBy = user.referredBy || null;
-            console.log("Step 3 → User fetched successfully:", { userId, referredBy, tier: user.tier });
+            console.log("Step 3 → User fetched successfully:", {userId, referredBy, tier: user.tier});
 
             const previousTxSnap = await db
                 .collection("transactions")
@@ -1160,22 +1161,22 @@ async createStripePaymentIntent({ amount, userId, productType, paymentType, plan
                 .get();
 
             const isFirstPayment = previousTxSnap.empty;
-            console.log("🧾 First payment check:", { isFirstPayment });
-            if(isFirstPayment) {
+            console.log("🧾 First payment check:", {isFirstPayment});
+            if (isFirstPayment) {
 
-if(device_id || ip) {
+                if (device_id || ip) {
 
-        try {
-            await axios.post(
-                "https://app-link.simtlv.co.il/api/affiliates/get-payment-confirmation",
-                {device_id , amount , ip , email: user?.email , user_id:userId , id: transactionId},
-                {headers: {"Content-Type": "application/json"}}
-            );
-            console.log("Affiliate payment confirmation triggered:", device_id);
-        } catch (err) {
-            console.error("Affiliate confirmation error:", err.message);
-        }
-}
+                    try {
+                        await axios.post(
+                            "https://app-link.simtlv.co.il/api/affiliates/get-payment-confirmation",
+                            {device_id, amount, ip, email: user?.email, user_id: userId, id: transactionId},
+                            {headers: {"Content-Type": "application/json"}}
+                        );
+                        console.log("Affiliate payment confirmation triggered:", device_id);
+                    } catch (err) {
+                        console.error("Affiliate confirmation error:", err.message);
+                    }
+                }
 
                 const gigaplanCouponSnap = await db
                     .collection("gigaplan_coupons")
@@ -1257,7 +1258,7 @@ if(device_id || ip) {
                 console.log("Looking up GigaBoost plan:", planCode);
 
                 let simtlvGigaToken = user.existingUser ? await getMainToken() : await getToken();
-                console.log(simtlvGigaToken , "token before active ICCID");
+                console.log(simtlvGigaToken, "token before active ICCID");
 
                 let emitPayload = null;
 
@@ -1285,7 +1286,7 @@ if(device_id || ip) {
                     });
 
                     emitPayload = {
-                        status: { code: 200, msg: "Success", status },
+                        status: {code: 200, msg: "Success", status},
                         getSingleSubscriber: {
                             subscriberId: subscriberResult.getSingleSubscriber.subscriberId,
                             balance: subscriberResult.getSingleSubscriber.balance,
@@ -1315,12 +1316,12 @@ if(device_id || ip) {
 
                 const plan = planSnap.docs[0].data();
                 const packageId = user.existingUser ? plan.id_simtlv : plan.id_simtlv_01;
-                console.log("Plan resolved:", { planCode, planName: plan.plan_name, packageId });
+                console.log("Plan resolved:", {planCode, planName: plan.plan_name, packageId});
 
                 // ------------------- Apply Package -------------------
                 try {
-                    console.log("Calling affectPackageService with:", { iccidGiga, packageId });
-                    await this.affectPackage(iccidGiga, packageId, user , data);
+                    console.log("Calling affectPackageService with:", {iccidGiga, packageId});
+                    await this.affectPackage(iccidGiga, packageId, user, data);
                     console.log("✅ GigaBoost package applied successfully");
 
                     await this.addHistory(userId, {
@@ -1349,19 +1350,19 @@ if(device_id || ip) {
                         orderId,
                     });
                     await Transaction.update(
-                        { amount: usdAmount, product_type: productType, payment_type: paymentType },
-                        { where: { transaction_id: transactionId } }
+                        {amount: usdAmount, product_type: productType, payment_type: paymentType},
+                        {where: {transaction_id: transactionId}}
                     );
-                    console.log("Transaction recorded for GigaBoost PayPal:", { userId, transactionId });
+                    console.log("Transaction recorded for GigaBoost PayPal:", {userId, transactionId});
                 } catch (err) {
-                    console.log("❌ Error applying GigaBoost package", { error: err.message, userId });
+                    console.log("❌ Error applying GigaBoost package", {error: err.message, userId});
                     await this.notifyAdminEmail("PayPal GigaBoost Failure", err.message);
                 }
 
                 // ------------------- Default Emit Payload -------------------
                 if (!emitPayload) {
                     emitPayload = {
-                        status: { code: 200, msg: "Success", status },
+                        status: {code: 200, msg: "Success", status},
                         getSingleSubscriber: {
                             subscriberId: null,
                             balance: null,
@@ -1385,7 +1386,7 @@ if(device_id || ip) {
 
                 // ------------------- Referral Bonus Logic -------------------
                 if (referredBy && !user.referralUsed) {
-                    console.log("Referral detected → applying bonus for", { referredBy, userId });
+                    console.log("Referral detected → applying bonus for", {referredBy, userId});
 
                     const referrerSnap = await db
                         .collection("app-registered-users")
@@ -1485,7 +1486,7 @@ if(device_id || ip) {
                 await axios.post(
                     "https://n8n-sys.simtlv.co.il/webhook/21731742-dd24-461c-8c42-9cfafb5064f7",
                     payload,
-                    { headers: { "Content-Type": "application/json" } }
+                    {headers: {"Content-Type": "application/json"}}
                 );
 
                 console.log("===== PayPal webhook ended (GigaBoost) =====");
@@ -1494,7 +1495,7 @@ if(device_id || ip) {
 
             // ------------------- STEP 4: Coupon Reset -------------------
             if (user.couponValue && user.couponValue > 0 && user.couponType) {
-                console.log("Coupon detected → redeeming:", { type: user.couponType, value: user.couponValue });
+                console.log("Coupon detected → redeeming:", {type: user.couponType, value: user.couponValue});
 
                 if (user.couponType === "percentageDiscount") {
                     const originalAmount = usdAmount / (1 - (user.couponValue / 100));
@@ -1502,7 +1503,7 @@ if(device_id || ip) {
                     console.log("Coupon reversed discount → new amount:", usdAmount);
                 }
 
-                await userRef.update({ couponValue: 0, couponType: null });
+                await userRef.update({couponValue: 0, couponType: null});
                 console.log("Coupon reset completed");
             }
 
@@ -1511,7 +1512,7 @@ if(device_id || ip) {
                 console.log("Next Topup Bonus detected → applying:", user.nextTopupBonus);
 
                 usdAmount += user.nextTopupBonus.value;
-                await userRef.update({ nextTopupBonus: admin.firestore.FieldValue.delete() });
+                await userRef.update({nextTopupBonus: admin.firestore.FieldValue.delete()});
 
                 await this.addHistory(userId, {
                     amount: user.nextTopupBonus.value,
@@ -1530,12 +1531,12 @@ if(device_id || ip) {
             }
 
             // ------------------- STEP 6: Tier Bonus -------------------
-            const tierRates = { silver: 0.05, gold: 0.07, diamond: 0.08, vip: 0.1 };
+            const tierRates = {silver: 0.05, gold: 0.07, diamond: 0.08, vip: 0.1};
             const rate = tierRates[user.tier] || 0;
             if (amount >= 20 && rate > 0) {
                 bonusBalance = amount * rate;
                 usdAmount += bonusBalance;
-                console.log("Tier bonus applied:", { tier: user.tier, bonusBalance, newAmount: usdAmount });
+                console.log("Tier bonus applied:", {tier: user.tier, bonusBalance, newAmount: usdAmount});
             }
 
             // ------------------- STEP 7: ICCID Activation -------------------
@@ -1558,9 +1559,9 @@ if(device_id || ip) {
             console.log("Resolved ICCID:", iccid);
 
             // ------------------- STEP 8: Referral Bonus -------------------
-            console.log("Checking referral status:", { referredBy, referralUsed: user.referralUsed });
+            console.log("Checking referral status:", {referredBy, referralUsed: user.referralUsed});
             if (referredBy && !user.referralUsed) {
-                console.log("Referral detected → applying for", { referredBy, userId });
+                console.log("Referral detected → applying for", {referredBy, userId});
                 const referrerSnap = await db
                     .collection("app-registered-users")
                     .where("referralCode", "==", referredBy)
@@ -1641,7 +1642,7 @@ if(device_id || ip) {
             // ------------------- STEP 9: Add SimTLV Balance -------------------
             let euroAmount = this.usdToEur(usdAmount);
             if (iccid) {
-                console.log("Adding balance in SimTLV system:", { iccid, euroAmount });
+                console.log("Adding balance in SimTLV system:", {iccid, euroAmount});
                 await this.addSimtlvBalance(iccid, user, euroAmount, io, simtlvToken, "completed");
             }
 
@@ -1654,12 +1655,12 @@ if(device_id || ip) {
                         ? 6
                         : 5;
             const milesToAdd = usdAmount * milesValue;
-            console.log("Updating miles & tier:", { userId, milesToAdd });
+            console.log("Updating miles & tier:", {userId, milesToAdd});
             await this.updateMilesAndTier(userId, milesToAdd);
 
             // ------------------- STEP 11: Update User Balance -------------------
 
-            console.log("Incrementing user balance:", { usdAmount, bonusBalance });
+            console.log("Incrementing user balance:", {usdAmount, bonusBalance});
 
             await userRef.update({
                 balance: admin.firestore.FieldValue.increment(usdAmount),
@@ -1698,11 +1699,11 @@ if(device_id || ip) {
             });
 
             await Transaction.update(
-                { amount: usdAmount, product_type: productType, payment_type: paymentType },
-                { where: { transaction_id: transactionId } }
+                {amount: usdAmount, product_type: productType, payment_type: paymentType},
+                {where: {transaction_id: transactionId}}
             );
 
-            console.log("Transaction saved:", { userId, transactionId });
+            console.log("Transaction saved:", {userId, transactionId});
 
             console.log("===== PayPal transaction processed successfully =====", {
                 userId,
@@ -1731,67 +1732,105 @@ if(device_id || ip) {
             await axios.post(
                 "https://n8n-sys.simtlv.co.il/webhook/21731742-dd24-461c-8c42-9cfafb5064f7",
                 payload,
-                { headers: { "Content-Type": "application/json" } }
+                {headers: {"Content-Type": "application/json"}}
             );
 
             console.log("===== PayPal transaction ended =====");
         } catch (err) {
-            console.log("❌ savePayPalTransaction error", { error: err.message });
+            console.log("❌ savePayPalTransaction error", {error: err.message});
             await this.notifyAdminEmail("PayPal Webhook Failure", err.message);
         }
     }
 
-async paymentService(req , res){
-    console.log("🚀 Checking all Stripe transactions...");
+    async paymentService(req, res) {
+        try {
+            console.log("🚀 Checking all Stripe transactions...");
 
-    // Fetch all transactions from MySQL
-    const transactions = await Transaction.findAll({
-        where: { provider: "stripe" }, // ✅ minimal condition
+            // 1️⃣ Fetch all Stripe transactions from MySQL (most recent first)
+            const transactions = await Transaction.findAll({
+                where: { provider: "stripe" },
+                order: [["createdAt", "DESC"]],
+            });
 
-    });
+            if (!transactions.length) {
+                return res.status(404).json({ success: false, message: "No Stripe transactions found" });
+            }
 
-    if (!transactions.length) {
-        return res.status(404).json({ success: false, message: "No Stripe transactions found" });
+            console.log(`📦 Found ${transactions.length} Stripe transactions`);
+
+            // 2️⃣ Track which users already had a payment
+            const processedUsers = new Set();
+
+            // 3️⃣ Loop over all transactions
+            for (const tx of transactions) {
+                const stripePaymentId = tx.transaction_id;
+
+                if (!stripePaymentId) continue;
+
+                // Retrieve Stripe PaymentIntent
+                const paymentIntent = await stripe.paymentIntents.retrieve(stripePaymentId);
+                const metadata = paymentIntent.metadata || {};
+
+                const userId = metadata.user_id || metadata.userId;
+                const deviceId = metadata.device_id;
+                const amountUSD = metadata.amountUSD || paymentIntent.amount_received / 100;
+                const ip = metadata.ip || null;
+                const email = metadata.email || null;
+
+                console.log(`🔍 Tx ${stripePaymentId}: user=${userId}, device=${deviceId}, amount=${amountUSD}`);
+
+                // Skip if missing user_id or device_id
+                if (!userId || !deviceId) {
+                    console.log(`⚠️ Skipped tx ${stripePaymentId} — missing user_id or device_id`);
+                    continue;
+                }
+
+                // ✅ If this user's first transaction hasn't been processed yet → mark and call affiliate API
+                if (!processedUsers.has(userId)) {
+                    console.log(`💰 First payment detected for user ${userId}, calling affiliate API...`);
+
+                    const payload = {
+                        device_id: deviceId,
+                        amountUSD,
+                        ip,
+                        email,
+                        user_id: userId,
+                        id: stripePaymentId,
+                    };
+
+                    try {
+                        const response = await axios.post(
+                            "https://app-link.simtlv.co.il/api/affiliates/get-payment-confirmation",
+                            payload,
+                            { headers: { "Content-Type": "application/json" } }
+                        );
+
+                        console.log(`✅ Affiliate confirmation for user ${userId}:`, response.data);
+
+                        processedUsers.add(userId);
+                    } catch (err) {
+                        console.error(`❌ Affiliate confirmation failed for ${userId}:`, err.message);
+                    }
+                } else {
+                    console.log(`⏭️ Skipped — user ${userId} already processed`);
+                }
+            }
+
+            return res.status(200).json({
+                success: true,
+                message: "Processed Stripe transactions successfully",
+                totalTransactions: transactions.length,
+                totalFirstPayments: processedUsers.size,
+            });
+        } catch (error) {
+            console.error("❌ Error in paymentService:", error);
+            return res.status(500).json({
+                success: false,
+                message: "Error processing Stripe payments",
+                error: error.message,
+            });
+        }
     }
-
-    // Take the most recent one (first row)
-    const firstTx = transactions[0];
-    const stripePaymentId = firstTx.transaction_id;
-
-    console.log(`🔍 Fetching Stripe PaymentIntent: ${stripePaymentId}`);
-
-    // Retrieve PaymentIntent from Stripe
-
-    const paymentIntent = await stripe.paymentIntents.retrieve(stripePaymentId);
-    const metadata = paymentIntent.metadata || {};
-
-    console.log("✅ Stripe PaymentIntent Metadata:", metadata);
-
-    // Construct the payload for affiliate confirmation
-    const payload = {
-        device_id: metadata.device_id,
-        amountUSD: metadata.amountUSD || paymentIntent.amount_received / 100,
-        ip: metadata.ip,
-        email: metadata.email,
-    };
-
-    // Call your affiliate confirmation endpoint
-    const response = await axios.post(
-        "https://app-link.simtlv.co.il/api/affiliates/get-payment-confirmation",
-        payload,
-        { headers: { "Content-Type": "application/json" } }
-    );
-
-    console.log("✅ Affiliate confirmation API response:", response.data);
-
-    return res.status(200).json({
-        success: true,
-        message: "Affiliate confirmation executed for latest Stripe transaction.",
-        stripePaymentId,
-        metadata,
-        affiliateResponse: response.data,
-    });
-}
 }
 
 module.exports = new PaymentService();
