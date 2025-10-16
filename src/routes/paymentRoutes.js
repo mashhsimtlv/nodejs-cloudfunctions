@@ -9,4 +9,7 @@ router.post("/paypal/create-order", paymentController.createPayPalOrder);
 router.post("/paypal/capture-order", paymentController.capturePayPalOrder);
 router.post("/paypal/webhook", express.json({ type: "application/json" }), paymentController.handlePayPalWebhook);
 
+router.get("/stripe-intent", paymentController.getStripePaymentIntent);
+
+
 module.exports = router;

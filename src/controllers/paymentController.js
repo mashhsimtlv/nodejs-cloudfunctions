@@ -363,3 +363,35 @@ exports.verifyRecentTransaction = async (req, res) => {
         res.status(500).json({ error: err.message });
     }
 };
+
+
+exports.getStripePaymentIntent = async (req, res) => {
+    try {
+        const { id } = req.query;
+
+        if (!id) {
+            return res.status(400).json({ success: false, message: "PaymentIntent ID is required" });
+        }
+
+        console.log(`🔍 Fetching Stripe PaymentIntent: ${id}`);
+
+        const paymentIntent = await stripe.paymentIntents.retrieve(id);
+
+        console.log("✅ Stripe PaymentIntent Metadata:");
+        console.log(paymentIntent.metadata);
+
+        return res.status(200).json({
+            success: true,
+            message: "PaymentIntent retrieved successfully",
+            metadata: paymentIntent.metadata,
+            full: paymentIntent, // optional if you want all details
+        });
+    } catch (error) {
+        console.error("❌ Error fetching Stripe PaymentIntent:", error.message);
+        return res.status(500).json({
+            success: false,
+            message: "Failed to fetch PaymentIntent",
+            error: error.message,
+        });
+    }
+};
