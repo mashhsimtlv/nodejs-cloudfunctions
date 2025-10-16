@@ -1756,6 +1756,7 @@ async paymentService(req , res){
     });
 
     console.log(createdRow)
+    return res.status(200).json(result);
     // Fetch all transactions from MySQL
     const transactions = await Transaction.findAll({
         where: { provider: "stripe" }, // ✅ minimal condition
