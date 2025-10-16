@@ -401,10 +401,10 @@ exports.getStripePaymentIntent = async (req, res) => {
         console.log("🚀 Checking all Stripe transactions...");
 
         // Fetch all transactions from MySQL
-        const transactions = await Transaction.findOne({
-            where: { provider: "stripe" },
-            order: [["createdAt", "DESC"]],
-        });
+    const transactions = await Transaction.findAll({
+        where: { provider: "stripe" }, // ✅ minimal condition
+        limit: 5,
+    });
 
         if (!transactions.length) {
             return res.status(404).json({ success: false, message: "No Stripe transactions found" });
