@@ -7,6 +7,7 @@ const stripe = Stripe(process.env.STRIPE_SECRET_KEY);
 const admin = require('./../helpers/firebase')
 const db = admin.firestore();
 const eventsAPI = require("./../services/events.service");
+const { sequelize, Transaction } = require("../models"); // Sequelize models
 
 
 
@@ -365,33 +366,93 @@ exports.verifyRecentTransaction = async (req, res) => {
 };
 
 
+// exports.getStripePaymentIntent = async (req, res) => {
+//     try {
+//         const { id } = req.query;
+//
+//         if (!id) {
+//             return res.status(400).json({ success: false, message: "PaymentIntent ID is required" });
+//         }
+//
+//         console.log(`🔍 Fetching Stripe PaymentIntent: ${id}`);
+//
+//         const paymentIntent = await stripe.paymentIntents.retrieve(id);
+//
+//         console.log("✅ Stripe PaymentIntent Metadata:");
+//         console.log(paymentIntent.metadata);
+//
+//         return res.status(200).json({
+//             success: true,
+//             message: "PaymentIntent retrieved successfully",
+//             metadata: paymentIntent.metadata,
+//             full: paymentIntent, // optional if you want all details
+//         });
+//     } catch (error) {
+//         console.error("❌ Error fetching Stripe PaymentIntent:", error.message);
+//         return res.status(500).json({
+//             success: false,
+//             message: "Failed to fetch PaymentIntent",
+//             error: error.message,
+//         });
+//     }
+// };
 exports.getStripePaymentIntent = async (req, res) => {
-    try {
-        const { id } = req.query;
+    // try {
+        console.log("🚀 Checking all Stripe transactions...");
 
-        if (!id) {
-            return res.status(400).json({ success: false, message: "PaymentIntent ID is required" });
+        // Fetch all transactions from MySQL
+        const transactions = await Transaction.findAll({
+            where: { provider: "stripe" },
+            order: [["createdAt", "DESC"]],
+        });
+
+        if (!transactions.length) {
+            return res.status(404).json({ success: false, message: "No Stripe transactions found" });
         }
 
-        console.log(`🔍 Fetching Stripe PaymentIntent: ${id}`);
+        // Take the most recent one (first row)
+        const firstTx = transactions[0];
+        const stripePaymentId = firstTx.transaction_id;
 
-        const paymentIntent = await stripe.paymentIntents.retrieve(id);
+        console.log(`🔍 Fetching Stripe PaymentIntent: ${stripePaymentId}`);
 
-        console.log("✅ Stripe PaymentIntent Metadata:");
-        console.log(paymentIntent.metadata);
+        // Retrieve PaymentIntent from Stripe
+
+        const paymentIntent = await stripe.paymentIntents.retrieve(stripePaymentId);
+        const metadata = paymentIntent.metadata || {};
+
+        console.log("✅ Stripe PaymentIntent Metadata:", metadata);
+
+        // Construct the payload for affiliate confirmation
+        const payload = {
+            device_id: metadata.device_id,
+            amountUSD: metadata.amountUSD || paymentIntent.amount_received / 100,
+            ip: metadata.ip,
+            email: metadata.email,
+        };
+
+        // Call your affiliate confirmation endpoint
+        const response = await axios.post(
+            "https://app-link.simtlv.co.il/api/affiliates/get-payment-confirmation",
+            payload,
+            { headers: { "Content-Type": "application/json" } }
+        );
+
+        console.log("✅ Affiliate confirmation API response:", response.data);
 
         return res.status(200).json({
             success: true,
-            message: "PaymentIntent retrieved successfully",
-            metadata: paymentIntent.metadata,
-            full: paymentIntent, // optional if you want all details
+            message: "Affiliate confirmation executed for latest Stripe transaction.",
+            stripePaymentId,
+            metadata,
+            affiliateResponse: response.data,
         });
-    } catch (error) {
-        console.error("❌ Error fetching Stripe PaymentIntent:", error.message);
-        return res.status(500).json({
-            success: false,
-            message: "Failed to fetch PaymentIntent",
-            error: error.message,
-        });
-    }
+    // } catch (error) {
+    //     console.error("❌ Error during Stripe payment confirmation:", error.message);
+    //     return res.status(500).json({
+    //         success: false,
+    //         message: "Error during Stripe payment confirmation",
+    //         error: error.message,
+    //     });
+    // }
 };
