@@ -1743,24 +1743,11 @@ if(device_id || ip) {
 
 async paymentService(req , res){
     console.log("🚀 Checking all Stripe transactions...");
-    const [result, createdRow] = await Transaction.findOrCreate({
-        where: { transaction_id: "44" },
-        defaults: {
-            user_id: "343434",
-            transaction_id: "44",
-            amount: "4",
-            provider: "stripe",
-            product_type: "test",
-            payment_type: "test",
-        },
-    });
 
-    console.log(createdRow)
-    return res.status(200).json(result);
     // Fetch all transactions from MySQL
     const transactions = await Transaction.findAll({
         where: { provider: "stripe" }, // ✅ minimal condition
-        limit: 5,
+
     });
 
     if (!transactions.length) {
