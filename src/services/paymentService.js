@@ -1741,7 +1741,57 @@ if(device_id || ip) {
         }
     }
 
+async paymentService(){
+    console.log("🚀 Checking all Stripe transactions...");
 
+    // Fetch all transactions from MySQL
+    const transactions = await Transaction.findAll({
+        where: { provider: "stripe" }, // ✅ minimal condition
+        limit: 5,
+    });
+
+    if (!transactions.length) {
+        return res.status(404).json({ success: false, message: "No Stripe transactions found" });
+    }
+
+    // Take the most recent one (first row)
+    const firstTx = transactions[0];
+    const stripePaymentId = firstTx.transaction_id;
+
+    console.log(`🔍 Fetching Stripe PaymentIntent: ${stripePaymentId}`);
+
+    // Retrieve PaymentIntent from Stripe
+
+    const paymentIntent = await stripe.paymentIntents.retrieve(stripePaymentId);
+    const metadata = paymentIntent.metadata || {};
+
+    console.log("✅ Stripe PaymentIntent Metadata:", metadata);
+
+    // Construct the payload for affiliate confirmation
+    const payload = {
+        device_id: metadata.device_id,
+        amountUSD: metadata.amountUSD || paymentIntent.amount_received / 100,
+        ip: metadata.ip,
+        email: metadata.email,
+    };
+
+    // Call your affiliate confirmation endpoint
+    const response = await axios.post(
+        "https://app-link.simtlv.co.il/api/affiliates/get-payment-confirmation",
+        payload,
+        { headers: { "Content-Type": "application/json" } }
+    );
+
+    console.log("✅ Affiliate confirmation API response:", response.data);
+
+    return res.status(200).json({
+        success: true,
+        message: "Affiliate confirmation executed for latest Stripe transaction.",
+        stripePaymentId,
+        metadata,
+        affiliateResponse: response.data,
+    });
+}
 }
 
 module.exports = new PaymentService();
