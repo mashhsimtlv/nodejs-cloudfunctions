@@ -959,11 +959,12 @@ class PaymentService {
     }
 
     async updateMilesAndTier(userId, milesToAdd) {
+        const intMilesToAdd = parseInt(milesToAdd, 10);
         const userRef = db.collection("app-registered-users").doc(userId);
         await db.runTransaction(async (t) => {
             const snap = await t.get(userRef);
             const data = snap.data();
-            const newMiles = (data?.miles || 0) + milesToAdd;
+            const newMiles = (data?.miles || 0) + intMilesToAdd;
 
             let tier = "silver";
             if (newMiles >= 5000) tier = "gold";
@@ -1745,10 +1746,14 @@ class PaymentService {
     async paymentService(req, res) {
         try {
             console.log("🚀 Checking all Stripe transactions...");
+            const { id } = req.query; // or req.body.id — adjust as per your route setup
 
-            // 1️⃣ Fetch all Stripe transactions from MySQL (most recent first)
+            // 1️⃣ Fetch transactions (all or by ID)
+            const whereClause = { provider: "stripe" };
+            if (id) whereClause.transaction_id = id;
+
             const transactions = await Transaction.findAll({
-                where: { provider: "stripe" },
+                where: whereClause,
                 order: [["createdAt", "DESC"]],
             });
 

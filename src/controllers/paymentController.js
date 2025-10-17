@@ -397,7 +397,7 @@ exports.verifyRecentTransaction = async (req, res) => {
 //     }
 // };
 exports.getStripePaymentIntent = async (req, res) => {
-    const resp = await paymentService.paymentService();
+    const resp = await paymentService.paymentService(req , res);
 
         return res.status(200).json({
             success: true,
