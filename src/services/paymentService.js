@@ -1782,7 +1782,7 @@ class PaymentService {
                 const ip = metadata.ip || null;
                 const email = metadata.email || null;
 
-                console.log(`🔍 Tx ${stripePaymentId}: user=${userId}, device=${deviceId}, amount=${amountUSD}`);
+                console.log(`🔍 Tx ${stripePaymentId}: user=${userId}, device=${deviceId}, amount=${amountUSD} , ip=${ip}`);
 
                 // Skip if missing user_id or device_id
                 if (!userId || !deviceId) {
