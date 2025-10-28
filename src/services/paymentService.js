@@ -1785,10 +1785,10 @@ class PaymentService {
                 console.log(`🔍 Tx ${stripePaymentId}: user=${userId}, device=${deviceId}, amount=${amountUSD} , ip=${ip}`);
 
                 // Skip if missing user_id or device_id
-                if (!userId || !deviceId) {
+                // if (!userId || !deviceId) {
                     console.log(`⚠️ Skipped tx ${stripePaymentId} — missing user_id or device_id`);
                     continue;
-                }
+                // }
 
                 // ✅ If this user's first transaction hasn't been processed yet → mark and call affiliate API
                 if (!processedUsers.has(userId)) {
