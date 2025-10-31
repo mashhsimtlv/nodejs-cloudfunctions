@@ -1743,12 +1743,11 @@ class PaymentService {
         }
     }
 
-    async paymentService(req, res) {
+    async paymentWooService(req, res) {
         try {
             console.log("🚀 Checking all Stripe transactions...");
-            const { id } = req.query; // or req.body.id — adjust as per your route setup
+            const { id } = req.query;
 
-            // 1️⃣ Fetch transactions (all or by ID)
             const whereClause = { provider: "stripe" };
             if (id) whereClause.transaction_id = id;
 
@@ -1834,6 +1833,51 @@ class PaymentService {
                 message: "Error processing Stripe payments",
                 error: error.message,
             });
+        }
+    }
+    async paymentService(req, res) {
+        console.log("🚀 Fetching WooCommerce transactions from Firestore...");
+
+        const snapshot = await db
+            .collection("transactions")
+            .where("provider", "==", "woocommerce")
+            .orderBy("transactionTime", "desc")
+            .get();
+
+        if (snapshot.empty) {
+            console.log("⚠️ No WooCommerce transactions found.");
+            return;
+        }
+
+        console.log(`📦 Found ${snapshot.size} WooCommerce transactions:\n`);
+
+        for (const doc of snapshot.docs) {
+            const tx = doc.data();
+            const orderId = tx.orderId;
+            console.log(`🧾 Fetching order #${orderId} from WooCommerce...`);
+
+            try {
+                // 4️⃣ Call WooCommerce REST API
+                const response = await axios.get(`${WOOCOMMERCE_URL}/orders/${orderId}`, {
+                    auth: {
+                        username: CONSUMER_KEY,
+                        password: CONSUMER_SECRET,
+                    },
+                });
+
+                const order = response.data;
+
+                console.log("✅ Order Fetched:");
+                console.log("👤 Customer:", order.billing?.first_name, order.billing?.last_name);
+                console.log("💰 Total:", order.total, order.currency);
+                console.log("📦 Items:");
+                order.line_items.forEach((item) => {
+                    console.log(`   - ${item.name} × ${item.quantity} (${item.total}${order.currency})`);
+                });
+                console.log("----------------------------------");
+            } catch (error) {
+                console.error(`❌ Failed to fetch order #${orderId}:`, error.response?.data || error.message);
+            }
         }
     }
 }
