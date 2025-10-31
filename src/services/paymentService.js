@@ -59,7 +59,7 @@ class PaymentService {
         return await stripe.paymentIntents.create({
             amount,
             currency: "usd",
-            payment_method_types: ["card","google_pay"],
+            payment_method_types: ["card"],
             statement_descriptor: "SIMTLV - eSIM&Sim",
             metadata: {userId, productType, paymentType, planName, planId, flowVersion: "v2", device_id, ip},
         });
