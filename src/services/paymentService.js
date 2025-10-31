@@ -1873,7 +1873,7 @@ class PaymentService {
                 const response = await api.get(`orders/${orderId}`);
                 const order = response.data;
 
-                console.log("✅ Order Fetched:");
+                console.log("✅ Order Fetched:" , order );
                 console.log("👤 Customer:", order.billing?.first_name, order.billing?.last_name);
                 console.log("💰 Total:", order.total, order.currency);
                 console.log("📦 Items:");
@@ -1881,6 +1881,7 @@ class PaymentService {
                     console.log(`   - ${item.name} × ${item.quantity} (${item.total}${order.currency})`);
                 });
                 console.log("----------------------------------");
+                break;
             } catch (error) {
                 console.error(`❌ Failed to fetch order #${orderId}:`, error.response?.data || error.message);
             }
