@@ -16,6 +16,18 @@ const { sequelize, Transaction } = require("../models"); // Sequelize models
 
 
 
+const WooCommerceRestApi = require("@woocommerce/woocommerce-rest-api").default;
+
+
+const api = new WooCommerceRestApi({
+    url: "https://simtlv.co.il",   // your WooCommerce site
+    consumerKey: "ck_00f65b27dd56e3617b0fa7e64b756a3c2cadf6dd",
+    consumerSecret: "cs_42153016d7425aa4f139582800d97cd09db03823",
+    version: "wc/v3"
+});
+
+
+
 class PaymentService {
     /**
      * Create Stripe PaymentIntent
@@ -1858,13 +1870,7 @@ class PaymentService {
 
             try {
                 // 4️⃣ Call WooCommerce REST API
-                const response = await axios.get(`${WOOCOMMERCE_URL}/orders/${orderId}`, {
-                    auth: {
-                        username: CONSUMER_KEY,
-                        password: CONSUMER_SECRET,
-                    },
-                });
-
+                const response = await api.get(`orders/${orderId}`);
                 const order = response.data;
 
                 console.log("✅ Order Fetched:");
