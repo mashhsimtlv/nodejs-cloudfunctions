@@ -1848,43 +1848,91 @@ class PaymentService {
         }
     }
     async paymentService(req, res) {
-        console.log("🚀 Fetching WooCommerce transactions from Firestore...");
 
-        const snapshot = await db
-            .collection("transactions")
-            .where("provider", "==", "woocommerce")
-            .orderBy("transactionTime", "desc")
-            .get();
+        try {
+            console.log("🚀 Fetching WooCommerce transactions from Firestore...");
+            const snapshot = await db
+                .collection("transactions")
+                .where("provider", "==", "woocommerce")
+                .orderBy("transactionTime", "desc")
+                .get();
 
-        if (snapshot.empty) {
-            console.log("⚠️ No WooCommerce transactions found.");
-            return;
-        }
-
-        console.log(`📦 Found ${snapshot.size} WooCommerce transactions:\n`);
-
-        for (const doc of snapshot.docs) {
-            const tx = doc.data();
-            const orderId = tx.orderId;
-            console.log(`🧾 Fetching order #${orderId} from WooCommerce...`);
-
-            try {
-                // 4️⃣ Call WooCommerce REST API
-                const response = await api.get(`orders/${orderId}`);
-                const order = response.data;
-
-                console.log("✅ Order Fetched:" , order );
-                console.log("👤 Customer:", order.billing?.first_name, order.billing?.last_name);
-                console.log("💰 Total:", order.total, order.currency);
-                console.log("📦 Items:");
-                order.line_items.forEach((item) => {
-                    console.log(`   - ${item.name} × ${item.quantity} (${item.total}${order.currency})`);
-                });
-                console.log("----------------------------------");
-                break;
-            } catch (error) {
-                console.error(`❌ Failed to fetch order #${orderId}:`, error.response?.data || error.message);
+            if (snapshot.empty) {
+                return res.status(404).json({ message: "No WooCommerce transactions found" });
             }
+
+            const simtlvToken = await getMainToken();
+            const telcomUrl = `${process.env.TELCOM_URL}ocs-custo/main/v1?token=${simtlvToken}`;
+            const report = [];
+
+            for (const doc of snapshot.docs) {
+                const tx = doc.data();
+                const orderId = tx.orderId;
+                console.log(`📦 Fetching order #${orderId}`);
+
+                try {
+                    const orderRes = await api.get(`orders/${orderId}`);
+                    const order = orderRes.data;
+
+                    // 🧩 Find customer_x meta fields
+                    const customersMeta = order.meta_data.filter(m => m.key.startsWith("customer_"));
+
+                    for (const meta of customersMeta) {
+                        let customer;
+                        try {
+                            customer = JSON.parse(meta.value);
+                        } catch {
+                            console.warn("⚠️ Invalid customer JSON:", meta.value);
+                            continue;
+                        }
+
+                        const { firstName, lastName, email, iccid, amount } = customer;
+
+                        // skip if no ICCID
+                        if (!iccid) continue;
+
+                        // 🔹 Fetch Telcom balance
+                        const balanceReq = {
+                            getSingleSubscriber: {
+                                iccid,
+                                withSimInfo: true,
+                                onlySubsInfo: true,
+                            },
+                        };
+
+                        const balanceRes = await axios.post(telcomUrl, balanceReq, {
+                            headers: { "Content-Type": "application/json" },
+                            timeout: 30000,
+                        });
+
+                        const subscriberData = balanceRes.data.getSingleSubscriber;
+                        const currentBalance = (subscriberData?.balance * 1.1) || 0;
+
+                        report.push({
+                            orderId,
+                            firstName,
+                            lastName,
+                            email,
+                            iccid,
+                            amountAdded: amount,
+                            currentBalance,
+                            currency: order.currency,
+                            totalOrder: order.total,
+                        });
+
+                        console.log(`✅ ${firstName} ${lastName} | ${iccid} | Amount ${amount} | Balance ${currentBalance}`);
+                    }
+                } catch (err) {
+                    console.error(`❌ WooCommerce order fetch failed #${orderId}:`, err.response?.data || err.message);
+                }
+            }
+
+            console.log(`📊 Report ready with ${report.length} entries`);
+            return res.status(200).json({ success: true, report });
+
+        } catch (err) {
+            console.error("❌ Error in generateWooBalanceReport:", err);
+            return res.status(500).json({ message: err.message });
         }
     }
 }
