@@ -1862,7 +1862,7 @@ class PaymentService {
             }
 
             const simtlvToken = await getMainToken();
-            const telcomUrl = `${process.env.TELCOM_URL}ocs-custo/main/v1?token=${simtlvToken}`;
+            const telcomUrl = `https://ocs-api.telco-vision.com:7443/ocs-custo/main/v1?token=${simtlvToken}`;
             const report = [];
 
             for (const doc of snapshot.docs) {
