@@ -13,6 +13,8 @@ const iccidService = require("../services/iccidService");
 const subscriberService = require("../services/subscriberService");
 const {getMainToken, getToken} = require("../helpers/generalSettings");
 const { sequelize, Transaction } = require("../models"); // Sequelize models
+const ExcelJS = require("exceljs");
+
 
 
 
@@ -1847,8 +1849,7 @@ class PaymentService {
             });
         }
     }
-    async paymentService(req, res) {
-
+    async paymentService  (req, res){
         try {
             console.log("🚀 Fetching WooCommerce transactions from Firestore...");
             const snapshot = await db
@@ -1874,8 +1875,7 @@ class PaymentService {
                     const orderRes = await api.get(`orders/${orderId}`);
                     const order = orderRes.data;
 
-                    // 🧩 Find customer_x meta fields
-                    const customersMeta = order.meta_data.filter(m => m.key.startsWith("customer_"));
+                    const customersMeta = order.meta_data.filter((m) => m.key.startsWith("customer_"));
 
                     for (const meta of customersMeta) {
                         let customer;
@@ -1887,8 +1887,6 @@ class PaymentService {
                         }
 
                         const { firstName, lastName, email, iccid, amount } = customer;
-
-                        // skip if no ICCID
                         if (!iccid) continue;
 
                         // 🔹 Fetch Telcom balance
@@ -1909,15 +1907,11 @@ class PaymentService {
                         const currentBalance = (subscriberData?.balance * 1.1) || 0;
 
                         report.push({
-                            orderId,
-                            firstName,
-                            lastName,
+                            name: `${firstName || ""} ${lastName || ""}`.trim(),
                             email,
                             iccid,
                             amountAdded: amount,
                             currentBalance,
-                            currency: order.currency,
-                            totalOrder: order.total,
                         });
 
                         console.log(`✅ ${firstName} ${lastName} | ${iccid} | Amount ${amount} | Balance ${currentBalance}`);
@@ -1928,13 +1922,37 @@ class PaymentService {
             }
 
             console.log(`📊 Report ready with ${report.length} entries`);
-            return res.status(200).json({ success: true, report });
+
+            // 📗 Generate Excel file
+            const workbook = new ExcelJS.Workbook();
+            const sheet = workbook.addWorksheet("WooCommerce Balances");
+
+            sheet.columns = [
+                { header: "Name", key: "name", width: 25 },
+                { header: "Email", key: "email", width: 30 },
+                { header: "ICCID", key: "iccid", width: 25 },
+                { header: "Amount Added", key: "amountAdded", width: 15 },
+                { header: "Current Balance", key: "currentBalance", width: 18 },
+            ];
+
+            report.forEach((r) => sheet.addRow(r));
+
+            // Style header
+            sheet.getRow(1).font = { bold: true };
+            sheet.getRow(1).alignment = { horizontal: "center" };
+
+            // Send as downloadable file
+            res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+            res.setHeader("Content-Disposition", "attachment; filename=woocommerce_balance_report.xlsx");
+
+            await workbook.xlsx.write(res);
+            res.end();
 
         } catch (err) {
-            console.error("❌ Error in generateWooBalanceReport:", err);
+            console.error("❌ Error in paymentService:", err);
             return res.status(500).json({ message: err.message });
         }
-    }
+    };
 }
 
 module.exports = new PaymentService();
