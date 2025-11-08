@@ -77,8 +77,10 @@ class IccidService {
 
             let simtlvToken;
             if (userData.existingUser) {
+                console.log("getting main token for existing user");
                 simtlvToken = await getMainToken();
             } else {
+                console.log("getting user token for new user");
                 simtlvToken = await getToken();
             }
 
@@ -96,6 +98,8 @@ class IccidService {
             const response = await axios.post(url, requestData, {
                 headers: { "Content-Type": "application/json" },
             });
+
+            console.log("check for balance add for iccid", response.data);
 
 
             const {
