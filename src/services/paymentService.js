@@ -1757,7 +1757,7 @@ class PaymentService {
         }
     }
 
-    async paymentWooService(req, res) {
+    async paymentService(req, res) {
         try {
             console.log("🚀 Checking all Stripe transactions...");
             const { id } = req.query;
@@ -1849,7 +1849,7 @@ class PaymentService {
             });
         }
     }
-    async paymentService  (req, res){
+    async paymentWooService  (req, res){
         try {
             console.log("🚀 Fetching WooCommerce transactions from Firestore...");
             const snapshot = await db
