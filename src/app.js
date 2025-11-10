@@ -57,5 +57,42 @@ io.on("connection", (socket) => {
     });
 });
 
+
+app.get("/api/server-ip", async (req, res) => {
+    try {
+        // Log raw headers for debugging
+        console.log("🔹 Request headers:", req.headers);
+
+        // Detect IP properly behind Cloudflare / RunCloud
+        const realIp =
+            req.headers["cf-connecting-ip"] || // Cloudflare
+            req.headers["x-forwarded-for"]?.split(",")[0]?.trim() || // reverse proxy chain
+            req.connection?.remoteAddress || // fallback
+            req.socket?.remoteAddress;
+
+        console.log("🖥️ Client IP:", realIp);
+
+        // For server public IP (outbound IP)
+        const os = require("os");
+        const localIps = Object.values(os.networkInterfaces())
+            .flat()
+            .filter((iface) => iface && !iface.internal)
+            .map((iface) => iface.address);
+
+        res.json({
+            success: true,
+            clientIp: realIp,
+            localIps,
+            cloudflare: req.headers["cf-connecting-ip"] ? true : false,
+            forwardedFor: req.headers["x-forwarded-for"] || null,
+            serverHost: req.hostname,
+        });
+    } catch (err) {
+        console.error("❌ Error detecting IP:", err);
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
