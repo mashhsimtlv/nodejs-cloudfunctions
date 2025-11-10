@@ -15,6 +15,7 @@ require("dotenv").config();
 
 
 const app = express();
+app.set('trust proxy', true);
 const server = http.createServer(app);
 
 // Setup WebSocket
