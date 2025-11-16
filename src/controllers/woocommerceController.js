@@ -71,3 +71,17 @@ exports.createOrderPaymentLink = async (req, res) => {
         res.status(500).json({ error: err.message });
     }
 };
+exports.getAllTags = async (req, res) => {
+    try {
+        const body = req.body;
+
+        console.log("🔔 Webhook Received:", JSON.stringify(body, null, 2));
+
+        // Respond.io will always send `event` field
+        // const eventType = body.event;
+        return res.status(200).json({ success: true, message: "Webhook received" });
+    } catch (err) {
+        logger.error("all tags issues", { error: err.message });
+        res.status(500).json({ error: err.message });
+    }
+};
