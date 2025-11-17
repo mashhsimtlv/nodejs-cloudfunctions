@@ -1,6 +1,7 @@
 const subscriberService = require("../services/subscriberService");
 const logger = require("../helpers/logger");
 const WooCommerceRestApi = require("@woocommerce/woocommerce-rest-api").default;
+const { ContactTag } = require("../models");
 
 
 const api = new WooCommerceRestApi({
@@ -77,9 +78,36 @@ exports.getAllTags = async (req, res) => {
 
         console.log("🔔 Webhook Received:", JSON.stringify(body, null, 2));
 
-        // Respond.io will always send `event` field
-        // const eventType = body.event;
-        return res.status(200).json({ success: true, message: "Webhook received" });
+        const contact = body?.contact ?? {};
+        const assignee = contact?.assignee ?? {};
+        const incomingTagsRaw =
+            (Array.isArray(contact?.tags) && contact.tags) ||
+            (Array.isArray(body?.tags) && body.tags) ||
+            [];
+        const incomingTags = Array.isArray(incomingTagsRaw) ? incomingTagsRaw : [];
+
+        const savedTagRecord = await ContactTag.create({
+            eventType: body?.event_type ?? null,
+            eventId: body?.event_id ?? null,
+            contactId: contact?.id ?? null,
+            contactFirstName: contact?.firstName ?? null,
+            contactLastName: contact?.lastName ?? null,
+            contactEmail: contact?.email ?? null,
+            contactPhone: contact?.phone ?? null,
+            contactCountryCode: contact?.countryCode ?? null,
+            contactStatus: contact?.status ?? null,
+            assigneeId: assignee?.id ?? null,
+            assigneeEmail: assignee?.email ?? null,
+            assigneeFirstName: assignee?.firstName ?? null,
+            assigneeLastName: assignee?.lastName ?? null,
+            commentText: body?.text ?? null,
+            tags: incomingTags.length ? JSON.stringify(incomingTags) : null,
+            rawPayload: JSON.stringify(body),
+        });
+
+        return res
+            .status(201)
+            .json({ success: true, message: "Webhook stored", id: savedTagRecord.id });
     } catch (err) {
         logger.error("all tags issues", { error: err.message });
         res.status(500).json({ error: err.message });
