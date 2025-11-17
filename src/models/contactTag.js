@@ -79,6 +79,16 @@ class ContactTag extends Model {
                     allowNull: true,
                     field: "tags",
                 },
+                mentionedUserIds: {
+                    type: DataTypes.TEXT,
+                    allowNull: true,
+                    field: "mentioned_user_ids",
+                },
+                mentionedUserEmails: {
+                    type: DataTypes.TEXT,
+                    allowNull: true,
+                    field: "mentioned_user_emails",
+                },
                 rawPayload: {
                     type: DataTypes.TEXT('long'),
                     allowNull: true,
@@ -92,6 +102,17 @@ class ContactTag extends Model {
                 timestamps: true,
             }
         );
+    }
+
+    static associate(models) {
+        this.hasMany(models.ContactTagStatus, {
+            as: "statuses",
+            foreignKey: "contact_tag_id",
+        });
+        this.hasMany(models.ContactTagComment, {
+            as: "comments",
+            foreignKey: "contact_tag_id",
+        });
     }
 }
 

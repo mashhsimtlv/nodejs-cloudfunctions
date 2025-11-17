@@ -1,7 +1,12 @@
 const subscriberService = require("../services/subscriberService");
 const logger = require("../helpers/logger");
 const WooCommerceRestApi = require("@woocommerce/woocommerce-rest-api").default;
-const { ContactTag } = require("../models");
+const { Op } = require("sequelize");
+const {
+    ContactTag,
+    ContactTagStatus,
+    ContactTagComment,
+} = require("../models");
 
 
 const api = new WooCommerceRestApi({
@@ -78,6 +83,9 @@ exports.getAllTags = async (req, res) => {
 
         console.log("🔔 Webhook Received:", JSON.stringify(body, null, 2));
 
+        const toStringOrNull = (value) =>
+            value === null || value === undefined || value === "" ? null : String(value);
+
         const contact = body?.contact ?? {};
         const assignee = contact?.assignee ?? {};
         const incomingTagsRaw =
@@ -86,22 +94,35 @@ exports.getAllTags = async (req, res) => {
             [];
         const incomingTags = Array.isArray(incomingTagsRaw) ? incomingTagsRaw : [];
 
+        const mentionedUserIds = Array.isArray(body?.mentionedUserIds)
+            ? body.mentionedUserIds.map((id) => String(id))
+            : [];
+        const mentionedUserEmails = Array.isArray(body?.mentionedUserEmails)
+            ? body.mentionedUserEmails.map((email) => String(email))
+            : [];
+
         const savedTagRecord = await ContactTag.create({
             eventType: body?.event_type ?? null,
             eventId: body?.event_id ?? null,
-            contactId: contact?.id ?? null,
+            contactId: toStringOrNull(contact?.id),
             contactFirstName: contact?.firstName ?? null,
             contactLastName: contact?.lastName ?? null,
             contactEmail: contact?.email ?? null,
             contactPhone: contact?.phone ?? null,
             contactCountryCode: contact?.countryCode ?? null,
             contactStatus: contact?.status ?? null,
-            assigneeId: assignee?.id ?? null,
+            assigneeId: toStringOrNull(assignee?.id),
             assigneeEmail: assignee?.email ?? null,
             assigneeFirstName: assignee?.firstName ?? null,
             assigneeLastName: assignee?.lastName ?? null,
             commentText: body?.text ?? null,
             tags: incomingTags.length ? JSON.stringify(incomingTags) : null,
+            mentionedUserIds: mentionedUserIds.length
+                ? JSON.stringify(mentionedUserIds)
+                : null,
+            mentionedUserEmails: mentionedUserEmails.length
+                ? JSON.stringify(mentionedUserEmails)
+                : null,
             rawPayload: JSON.stringify(body),
         });
 
@@ -110,6 +131,125 @@ exports.getAllTags = async (req, res) => {
             .json({ success: true, message: "Webhook stored", id: savedTagRecord.id });
     } catch (err) {
         logger.error("all tags issues", { error: err.message });
+        res.status(500).json({ error: err.message });
+    }
+};
+
+exports.listTags = async (req, res) => {
+    try {
+        const userIdRaw = req.query.userId;
+        const limitRaw = parseInt(req.query.limit, 10);
+        const limit = Number.isNaN(limitRaw) ? 40 : Math.min(Math.max(limitRaw, 1), 100);
+
+        const whereClause = {};
+        if (userIdRaw) {
+            const userId = String(userIdRaw);
+            const mentionNeedle = `"${userId}"`;
+            whereClause[Op.or] = [
+                { assigneeId: userId },
+                { mentionedUserIds: { [Op.like]: `%${mentionNeedle}%` } },
+            ];
+        }
+
+        const tags = await ContactTag.findAll({
+            where: whereClause,
+            order: [["createdAt", "DESC"]],
+            limit,
+            include: [
+                {
+                    model: ContactTagStatus,
+                    as: "statuses",
+                },
+                {
+                    model: ContactTagComment,
+                    as: "comments",
+                },
+            ],
+        });
+
+        return res.json({ success: true, data: tags });
+    } catch (err) {
+        logger.error("list tags failed", { error: err.message });
+        res.status(500).json({ error: err.message });
+    }
+};
+
+exports.setTagStatus = async (req, res) => {
+    try {
+        const { tagId } = req.params;
+        const { userId, status, entertainedByUserId } = req.body;
+
+        if (!tagId) {
+            return res.status(400).json({ error: "tagId param is required" });
+        }
+        if (!userId || !status) {
+            return res
+                .status(400)
+                .json({ error: "userId and status are required in body" });
+        }
+
+        const tag = await ContactTag.findByPk(tagId);
+        if (!tag) {
+            return res.status(404).json({ error: "Tag not found" });
+        }
+
+        const payload = {
+            contactTagId: tag.id,
+            userId: String(userId),
+            status,
+            entertainedByUserId: entertainedByUserId
+                ? String(entertainedByUserId)
+                : String(userId),
+        };
+
+        const existing = await ContactTagStatus.findOne({
+            where: { contactTagId: tag.id, userId: payload.userId },
+        });
+
+        let record;
+        if (existing) {
+            await existing.update(payload);
+            record = existing;
+        } else {
+            record = await ContactTagStatus.create(payload);
+        }
+
+        return res.json({ success: true, data: record });
+    } catch (err) {
+        logger.error("set tag status failed", { error: err.message });
+        res.status(500).json({ error: err.message });
+    }
+};
+
+exports.addTagComment = async (req, res) => {
+    try {
+        const { tagId } = req.params;
+        const { addedByUserId, comment, taggedUserId } = req.body;
+
+        if (!tagId) {
+            return res.status(400).json({ error: "tagId param is required" });
+        }
+        if (!addedByUserId || !comment) {
+            return res
+                .status(400)
+                .json({ error: "addedByUserId and comment are required" });
+        }
+
+        const tag = await ContactTag.findByPk(tagId);
+        if (!tag) {
+            return res.status(404).json({ error: "Tag not found" });
+        }
+
+        const record = await ContactTagComment.create({
+            contactTagId: tag.id,
+            addedByUserId: String(addedByUserId),
+            comment,
+            taggedUserId: taggedUserId ? String(taggedUserId) : null,
+        });
+
+        return res.status(201).json({ success: true, data: record });
+    } catch (err) {
+        logger.error("add tag comment failed", { error: err.message });
         res.status(500).json({ error: err.message });
     }
 };
