@@ -145,9 +145,16 @@ exports.listTags = async (req, res) => {
         if (userIdRaw) {
             const userId = String(userIdRaw);
             const mentionNeedle = `"${userId}"`;
+            const mentionPresenceCondition = {
+                [Op.and]: [
+                    { mentionedUserIds: { [Op.not]: null } },
+                    { mentionedUserIds: { [Op.ne]: "[]" } },
+                ],
+            };
             whereClause[Op.or] = [
                 { assigneeId: userId },
                 { mentionedUserIds: { [Op.like]: `%${mentionNeedle}%` } },
+                mentionPresenceCondition,
             ];
         }
 
