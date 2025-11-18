@@ -78,16 +78,14 @@ exports.createOrderPaymentLink = async (req, res) => {
     }
 };
 exports.getAllTags = async (req, res) => {
+    const body = req.body;
+
+    console.log("🔔 Webhook Received:", JSON.stringify(body, null, 2));
+
     try {
-        const body = req.body;
-
-        console.log("🔔 Webhook Received:", JSON.stringify(body, null, 2));
-
-        const toStringOrNull = (value) =>
-            value === null || value === undefined || value === "" ? null : String(value);
-
         const contact = body?.contact ?? {};
         const assignee = contact?.assignee ?? {};
+
         const incomingTagsRaw =
             (Array.isArray(contact?.tags) && contact.tags) ||
             (Array.isArray(body?.tags) && body.tags) ||
@@ -97,43 +95,56 @@ exports.getAllTags = async (req, res) => {
         const mentionedUserIds = Array.isArray(body?.mentionedUserIds)
             ? body.mentionedUserIds.map((id) => String(id))
             : [];
+
         const mentionedUserEmails = Array.isArray(body?.mentionedUserEmails)
             ? body.mentionedUserEmails.map((email) => String(email))
             : [];
 
-        const savedTagRecord = await ContactTag.create({
-            eventType: body?.event_type ?? null,
-            eventId: body?.event_id ?? null,
-            contactId: toStringOrNull(contact?.id),
-            contactFirstName: contact?.firstName ?? null,
-            contactLastName: contact?.lastName ?? null,
-            contactEmail: contact?.email ?? null,
-            contactPhone: contact?.phone ?? null,
-            contactCountryCode: contact?.countryCode ?? null,
-            contactStatus: contact?.status ?? null,
-            assigneeId: toStringOrNull(assignee?.id),
-            assigneeEmail: assignee?.email ?? null,
-            assigneeFirstName: assignee?.firstName ?? null,
-            assigneeLastName: assignee?.lastName ?? null,
-            commentText: body?.text ?? null,
-            tags: incomingTags.length ? JSON.stringify(incomingTags) : null,
-            mentionedUserIds: mentionedUserIds.length
-                ? JSON.stringify(mentionedUserIds)
-                : null,
-            mentionedUserEmails: mentionedUserEmails.length
-                ? JSON.stringify(mentionedUserEmails)
-                : null,
-            rawPayload: JSON.stringify(body),
-        });
+        // --- CONDITION: Only save if mentionedUserIds is present ---
+        if (mentionedUserIds.length > 0) {
+            console.log("💾 Saving webhook because mentionedUserIds exist:", mentionedUserIds);
 
-        return res
-            .status(201)
-            .json({ success: true, message: "Webhook stored", id: savedTagRecord.id });
+            await ContactTag.create({
+                eventType: body?.event_type ?? null,
+                eventId: body?.event_id ?? null,
+                contactId: contact?.id ?? null,
+                contactFirstName: contact?.firstName ?? null,
+                contactLastName: contact?.lastName ?? null,
+                contactEmail: contact?.email ?? null,
+                contactPhone: contact?.phone ?? null,
+                contactCountryCode: contact?.countryCode ?? null,
+                contactStatus: contact?.status ?? null,
+
+                assigneeId: assignee?.id ?? null,
+                assigneeEmail: assignee?.email ?? null,
+                assigneeFirstName: assignee?.firstName ?? null,
+                assigneeLastName: assignee?.lastName ?? null,
+
+                commentText: body?.text ?? null,
+                tags: incomingTags.length ? JSON.stringify(incomingTags) : null,
+                mentionedUserIds: JSON.stringify(mentionedUserIds),
+                mentionedUserEmails: mentionedUserEmails.length
+                    ? JSON.stringify(mentionedUserEmails)
+                    : null,
+
+                rawPayload: JSON.stringify(body),
+            });
+        } else {
+            console.log("⏭ Skipped saving (NO mentionedUserIds)");
+        }
+
+        // ALWAYS respond 200 OK
+        return res.status(200).json({ success: true });
+
     } catch (err) {
-        logger.error("all tags issues", { error: err.message });
-        res.status(500).json({ error: err.message });
+        // Only print, do not send 500
+        console.error("❌ Webhook error (ignored):", err.message);
+
+        // Still return 200 OK
+        return res.status(200).json({ success: false });
     }
 };
+
 
 exports.listTags = async (req, res) => {
     try {
