@@ -8,6 +8,69 @@ const {
     ContactTagComment,
 } = require("../models");
 
+// Normalize webhook payloads so we can store and emit the same shape consistently
+const buildContactTagRecord = ({
+    body,
+    contact,
+    assignee,
+    incomingTags,
+    mentionedUserIds,
+    mentionedUserEmails,
+}) => {
+    const tagsJson = incomingTags.length ? JSON.stringify(incomingTags) : null;
+    const mentionedIdsJson = mentionedUserIds.length
+        ? JSON.stringify(mentionedUserIds)
+        : null;
+    const mentionedEmailsJson = mentionedUserEmails.length
+        ? JSON.stringify(mentionedUserEmails)
+        : null;
+
+    return {
+        eventType: body?.event_type ?? null,
+        eventId: body?.event_id ?? null,
+        contactId: contact?.id ?? null,
+        contactFirstName: contact?.firstName ?? null,
+        contactLastName: contact?.lastName ?? null,
+        contactEmail: contact?.email ?? null,
+        contactPhone: contact?.phone ?? null,
+        contactCountryCode: contact?.countryCode ?? null,
+        contactStatus: contact?.status ?? null,
+        assigneeId: assignee?.id ?? null,
+        assigneeEmail: assignee?.email ?? null,
+        assigneeFirstName: assignee?.firstName ?? null,
+        assigneeLastName: assignee?.lastName ?? null,
+        commentText: body?.text ?? null,
+        tags: tagsJson,
+        mentionedUserIds: mentionedIdsJson,
+        mentionedUserEmails: mentionedEmailsJson,
+        rawPayload: JSON.stringify(body),
+    };
+};
+
+const emitContactTagEvent = (io, tagData, targetUserIds = []) => {
+    if (!io || !targetUserIds.length) {
+        return;
+    }
+
+    const timestamp = new Date();
+    const emitPayload = {
+        ...tagData,
+        statuses: [],
+        comments: [],
+        createdAt: timestamp,
+        updatedAt: timestamp,
+    };
+
+    targetUserIds.forEach((userId) => {
+        const userKey = String(userId || "").trim();
+        if (!userKey) return;
+        io.emit(`contact_tags_update_${userKey}`, {
+            success: true,
+            data: emitPayload,
+        });
+    });
+};
+
 
 const api = new WooCommerceRestApi({
     url: "https://simtlv.co.il",   // your WooCommerce site
@@ -83,6 +146,7 @@ exports.getAllTags = async (req, res) => {
     console.log("🔔 Webhook Received:", JSON.stringify(body, null, 2));
 
     try {
+        const io = req.app.get("io");
         const contact = body?.contact ?? {};
         const assignee = contact?.assignee ?? {};
 
@@ -100,35 +164,26 @@ exports.getAllTags = async (req, res) => {
             ? body.mentionedUserEmails.map((email) => String(email))
             : [];
 
+        const recordPayload = buildContactTagRecord({
+            body,
+            contact,
+            assignee,
+            incomingTags,
+            mentionedUserIds,
+            mentionedUserEmails,
+        });
+
+        const targetUserIds = new Set([
+            assignee?.id ? String(assignee.id) : null,
+            ...mentionedUserIds,
+        ]);
+
         // --- CONDITION: Only save if mentionedUserIds is present ---
         if (mentionedUserIds.length > 0) {
             console.log("💾 Saving webhook because mentionedUserIds exist:", mentionedUserIds);
 
-            await ContactTag.create({
-                eventType: body?.event_type ?? null,
-                eventId: body?.event_id ?? null,
-                contactId: contact?.id ?? null,
-                contactFirstName: contact?.firstName ?? null,
-                contactLastName: contact?.lastName ?? null,
-                contactEmail: contact?.email ?? null,
-                contactPhone: contact?.phone ?? null,
-                contactCountryCode: contact?.countryCode ?? null,
-                contactStatus: contact?.status ?? null,
-
-                assigneeId: assignee?.id ?? null,
-                assigneeEmail: assignee?.email ?? null,
-                assigneeFirstName: assignee?.firstName ?? null,
-                assigneeLastName: assignee?.lastName ?? null,
-
-                commentText: body?.text ?? null,
-                tags: incomingTags.length ? JSON.stringify(incomingTags) : null,
-                mentionedUserIds: JSON.stringify(mentionedUserIds),
-                mentionedUserEmails: mentionedUserEmails.length
-                    ? JSON.stringify(mentionedUserEmails)
-                    : null,
-
-                rawPayload: JSON.stringify(body),
-            });
+            emitContactTagEvent(io, recordPayload, Array.from(targetUserIds).filter(Boolean));
+            await ContactTag.create(recordPayload);
         } else {
             console.log("⏭ Skipped saving (NO mentionedUserIds)");
         }
