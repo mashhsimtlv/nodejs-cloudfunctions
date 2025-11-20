@@ -271,3 +271,28 @@ exports.addTagComment = async (req, res) => {
         res.status(500).json({ error: err.message });
     }
 };
+exports.setTagsCompletedAt = async (req, res) => {
+    try {
+        const {tagId } = req.body;
+
+        if (!tagId) {
+            return res.status(400).json({ error: "tagId param is required" });
+        }
+
+
+        const tag = await ContactTag.findByPk(tagId);
+        if (!tag) {
+            return res.status(404).json({ error: "Tag not found" });
+        }
+
+        const record = await tag.update({
+            completedAt: new Date(),
+            status: 'completed'
+        })
+
+        return res.status(201).json({ success: true, data: record });
+    } catch (err) {
+        logger.error("add tag comment failed", { error: err.message });
+        res.status(500).json({ error: err.message });
+    }
+};
