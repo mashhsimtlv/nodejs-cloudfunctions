@@ -79,6 +79,16 @@ class ContactTag extends Model {
                     allowNull: true,
                     field: "tags",
                 },
+                status: {
+                    type: DataTypes.TEXT,
+                    allowNull: true,
+                    field: "status",
+                },
+                completedAt: {
+                    type: DataTypes.DATE,
+                    allowNull: true,
+                    field: "completedAt",
+                },
                 mentionedUserIds: {
                     type: DataTypes.TEXT,
                     allowNull: true,
