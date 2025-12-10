@@ -80,7 +80,7 @@ class IccidService {
     /**
      * Get subscriber details (with SIM info)
      */
-    async getSingleSubscriber({ iccid, userData }) {
+    async getSingleSubscriber({ iccid, userData , allowToggle = true }) {
         try {
 
             let simtlvToken;
@@ -106,6 +106,19 @@ class IccidService {
             const response = await axios.post(url, requestData, {
                 headers: { "Content-Type": "application/json" },
             });
+
+            const apiStatus = response.data?.status;
+            if (apiStatus?.code === 11 || apiStatus?.msg === "Subscriber not found") {
+                let updatedUserData = null;
+                if(userData.existingUser === false){
+                    updatedUserData = { ...userData, existingUser: true };
+                }else{
+                    updatedUserData = { ...userData, existingUser: false };
+                }
+                await this.markUserAsExisting(userData);
+
+                return this.getSingleSubscriber({ iccid, userData: updatedUserData , allowToggle: false });
+            }
 
             console.log("check for balance add for iccid", response.data);
 
@@ -137,6 +150,28 @@ class IccidService {
             return { status: "error", msg: err.message };
         }
     }
+    async markUserAsExisting(userData) {
+        const uid = userData?.uid || userData?.userId;
+        if (!uid) return;
+
+        try {
+            const userRef = admin.firestore().collection("app-registered-users").doc(uid);
+            await userRef.set({ existingUser: true }, { merge: true });
+        } catch (err) {
+            console.error("Failed to update Firestore existingUser flag:", err.message);
+        }
+
+        try {
+            await User.update(
+                { existing_user: true },
+                { where: { uid } }
+            );
+        } catch (err) {
+            console.error("Failed to update MySQL existing_user flag:", err.message);
+        }
+    }
 }
+
+
 
 module.exports = new IccidService();

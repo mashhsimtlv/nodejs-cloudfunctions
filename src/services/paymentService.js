@@ -12,7 +12,9 @@ const db = admin.firestore();
 const iccidService = require("../services/iccidService");
 const subscriberService = require("../services/subscriberService");
 const {getMainToken, getToken} = require("../helpers/generalSettings");
-const { sequelize, Transaction } = require("../models"); // Sequelize models
+const models = require("../models"); // Sequelize models
+const { sequelize, Transaction } = models;
+const User = models.User || models.user; // optional MySQL/Mongo user model
 const ExcelJS = require("exceljs");
 
 
@@ -813,8 +815,36 @@ class PaymentService {
     }
 
 
+    async setExistingUserFlag(uid, value) {
+        if (!uid) {
+            console.warn("setExistingUserFlag called without uid");
+            return;
+        }
+
+        try {
+            await db.collection("app-registered-users").doc(uid).set(
+                { existingUser: value },
+                { merge: true }
+            );
+        } catch (err) {
+            console.error("Failed to update Firestore existingUser flag:", err.message);
+        }
+
+        if (User?.update) {
+            try {
+                await User.update({ existing_user: value }, { where: { uid } });
+            } catch (err) {
+                console.error("Failed to update MySQL existing_user flag:", err.message);
+            }
+        } else {
+            console.warn("User model not available; skipping SQL existing_user update");
+        }
+    }
+
+
+
     // ------------------- Affect Package Method -------------------
-    async affectPackage(iccid, packageId, user, paymentIntent) {
+    async affectPackage(iccid, packageId, user, paymentIntent , allowToggle = true) {
         console.log("===== AffectPackage started =====", {iccid, packageId, userId: user.uid});
 
         try {
@@ -844,6 +874,20 @@ class PaymentService {
                 },
                 timeout: 30000
             });
+
+            const status = response.data?.status;
+            const isOk = status?.msg === "OK" || status?.code === 0;
+
+            if (!isOk) {
+                const statusMsg = status?.msg || status?.message || "Unknown error";
+                console.warn("affectPackageService returned non-OK status", { status });
+                if (allowToggle) {
+                    const toggledExisting = !user.existingUser;
+                    await this.setExistingUserFlag(user.uid || user.userId, toggledExisting);
+                    return this.affectPackage(iccid, packageId, { ...user, existingUser: toggledExisting }, false);
+                }
+                throw new Error(`Affect package failed: ${statusMsg}`);
+            }
 
             console.log("affectPackageService response received:", response.data);
 
