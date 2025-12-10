@@ -845,9 +845,17 @@ class PaymentService {
 
     // ------------------- Affect Package Method -------------------
     async affectPackage(iccid, packageId, user, paymentIntent , allowToggle = true) {
-        console.log("===== AffectPackage started =====", {iccid, packageId, userId: user.uid});
+
 
         try {
+            const planSnap = await db
+                .collection("gigaBoostPlans")
+                .where("plan_name", "==", "GigaBoost 7GB 30Days Zone 1")
+                .limit(1)
+                .get();
+            const plan = planSnap.docs[0].data();
+            const packageId = user.existingUser ? plan.id_simtlv : plan.id_simtlv_01;
+
             let simtlvToken = user.existingUser ? await getMainToken() : await getToken();
             // Call the actual service
             console.log("Calling affectPackageService...", {iccid, packageId});
