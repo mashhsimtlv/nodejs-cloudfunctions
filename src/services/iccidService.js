@@ -132,6 +132,7 @@ class IccidService {
 
             // 4. Return structured result
             return {
+                simtlvToken: simtlvToken,
                 status: { code: 0, msg: "OK" },
                 getSingleSubscriber: {
                     sim: {

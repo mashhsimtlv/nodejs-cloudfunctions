@@ -979,7 +979,7 @@ class PaymentService {
         };
 
 
-        const url = `https://ocs-api.telco-vision.com:7443/ocs-custo/main/v1?token=${simtlvToken}`;
+        const url = `https://ocs-api.telco-vision.com:7443/ocs-custo/main/v1?token=${subscriberResult.simtlvToken}`;
         const response = await axios.post(url, requestData, {
             headers: {"Content-Type": "application/json"}
         });
