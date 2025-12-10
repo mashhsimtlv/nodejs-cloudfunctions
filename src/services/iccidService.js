@@ -1,6 +1,7 @@
 const axios = require("axios");
 const admin = require("./../helpers/firebase");
 const db = admin.firestore();
+const { User } = require("./../models");
 
 // Helper functions (you probably have them in another service already)
 const { getMainToken, getToken } = require("./../helpers/generalSettings");
@@ -52,9 +53,16 @@ class IccidService {
                 },
             };
 
+            await User.update(
+                { iccid: iccidValue },     // fields to update
+                { where: { uid } }         // condition
+            );
+
             const response = await axios.post(url, requestData, {
                 headers: { "Content-Type": "application/json" },
             });
+
+
 
             console.log(response.data , iccidValue, "server data");
 
