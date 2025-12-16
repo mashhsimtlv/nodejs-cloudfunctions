@@ -8,6 +8,7 @@ const paymentRoutes = require("./routes/paymentRoutes");
 const notificationRoutes = require("./routes/notificationRoutes");
 const subscriberRoutes = require("./routes/subscriberRoutes");
 const woocommerceRoutes = require("./routes/woocommerceRoutes");
+const pricingRoutes = require("./routes/pricingRoutes");
 const sequelize = require('./models').sequelize;
 
 require("dotenv").config();
@@ -47,6 +48,7 @@ app.use("/api/payments", paymentRoutes);
 app.use("/api/notifications", notificationRoutes);
 app.use("/api/subscribers", subscriberRoutes);
 app.use("/api/woocommerce", woocommerceRoutes);
+app.use("/api/pricing", pricingRoutes);
 
 // WebSocket connection
 io.on("connection", (socket) => {
