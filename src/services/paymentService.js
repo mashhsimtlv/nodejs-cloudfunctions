@@ -13,7 +13,7 @@ const iccidService = require("../services/iccidService");
 const subscriberService = require("../services/subscriberService");
 const {getMainToken, getToken} = require("../helpers/generalSettings");
 const models = require("../models"); // Sequelize models
-const { sequelize, Transaction } = models;
+const { sequelize, Transaction, CallNumber, UserCallerNumber } = models;
 const User = models.User || models.user; // optional MySQL/Mongo user model
 const ExcelJS = require("exceljs");
 
@@ -37,7 +37,19 @@ class PaymentService {
      * Create Stripe PaymentIntent
      */
 
-    async createStripePaymentIntent({amount, userId, productType, paymentType, planName, planId, device_id, ip , paymentFor}) {
+    async createStripePaymentIntent({
+        amount,
+        userId,
+        productType,
+        paymentType,
+        planName,
+        planId,
+        device_id,
+        ip,
+        paymentFor,
+        startDate,
+        endDate,
+    }) {
         console.log("Here is the device id ", device_id);
 
         // ✅ Use your fetch user method
@@ -65,7 +77,19 @@ class PaymentService {
             currency: "usd",
             payment_method_types: ["card"],
             statement_descriptor: "SIMTLV - eSIM&Sim",
-            metadata: {userId, productType, paymentType, planName, planId, flowVersion: "v2", device_id, ip , paymentFor},
+            metadata: {
+                userId,
+                productType,
+                paymentType,
+                planName,
+                planId,
+                flowVersion: "v2",
+                device_id,
+                ip,
+                paymentFor,
+                startDate,
+                endDate,
+            },
         });
     }
 
@@ -754,6 +778,26 @@ class PaymentService {
                 {where: {transaction_id: id}}
             );
 
+            if (metadata?.paymentFor === "calling") {
+                try {
+                    const startTime = metadata.startDate ? new Date(metadata.startDate) : new Date(created * 1000);
+                    const endTime = metadata.endDate ? new Date(metadata.endDate) : null;
+                    const assigned = await this.assignCallingNumber({
+                        userId,
+                        startTime,
+                        endTime,
+                    });
+                    console.log("📞 Calling number assigned", {
+                        userId,
+                        callingNumber: assigned.number.number,
+                        startTime,
+                        endTime,
+                    });
+                } catch (assignErr) {
+                    console.error("❌ Failed to assign calling number:", assignErr.message);
+                }
+            }
+
             console.log("Transaction saved:", {userId, transactionId: id});
 
             console.log("===== Stripe transaction processed successfully =====", {
@@ -812,6 +856,44 @@ class PaymentService {
         });
 
         console.log("✅ Legacy transaction saved:", {userId, transactionId: id});
+    }
+
+    /**
+     * Assign a free calling number to a user and mark it occupied
+     */
+    async assignCallingNumber({userId, startTime, endTime}) {
+        const t = await sequelize.transaction();
+        try {
+            const number = await CallNumber.findOne({
+                where: {is_occupied: false},
+                order: [["id", "ASC"]],
+                transaction: t,
+                lock: t.LOCK.UPDATE,
+            });
+
+            if (!number) {
+                throw new Error("No free calling numbers available");
+            }
+
+            await number.update({is_occupied: true}, {transaction: t});
+
+            const mapping = await UserCallerNumber.create(
+                {
+                    user_id: userId,
+                    calling_number_id: number.id,
+                    start_time: startTime,
+                    end_time: endTime,
+                    current_balance: 0,
+                },
+                {transaction: t}
+            );
+
+            await t.commit();
+            return {number, mapping};
+        } catch (err) {
+            await t.rollback();
+            throw err;
+        }
     }
 
 

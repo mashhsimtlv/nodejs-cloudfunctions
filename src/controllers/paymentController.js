@@ -7,7 +7,7 @@ const stripe = Stripe(process.env.STRIPE_SECRET_KEY);
 const admin = require('./../helpers/firebase')
 const db = admin.firestore();
 const eventsAPI = require("./../services/events.service");
-const { sequelize, Transaction } = require("../models"); // Sequelize models
+const { sequelize, Transaction, CallNumber, UserCallerNumber } = require("../models"); // Sequelize models
 
 
 
@@ -118,7 +118,76 @@ exports.createStripeTestPaymentIntent = async (req, res) => {
     }
 };
 
-/**
+exports.createCallingPaymentIntent = async (req, res) => {
+    try {
+        const { amount, user_id, start_date, end_date } = req.body;
+
+        if (!amount || typeof amount !== "number") {
+            return res.status(400).json({ error: "Amount must be a valid number" });
+        }
+        if (!user_id) {
+            return res.status(400).json({ error: "user_id is required" });
+        }
+        if (!start_date || !end_date) {
+            return res.status(400).json({ error: "start_date and end_date are required" });
+        }
+
+        const intent = await paymentService.createStripePaymentIntent({
+            amount,
+            userId: user_id,
+            productType: "calling_number",
+            paymentType: "calling",
+            paymentFor: "calling",
+            startDate: start_date,
+            endDate: end_date,
+        });
+
+        return res.json({ clientSecret: intent.client_secret });
+    } catch (err) {
+        logger.error("Calling payment intent failed", { error: err.message });
+        res.status(500).json({ error: err.message });
+    }
+};
+
+exports.getCallingCredentialsByUser = async (req, res) => {
+    try {
+        const userId = req.params.userId || req.query.userId || req.query.user_id;
+        if (!userId) {
+            return res.status(400).json({ error: "userId is required" });
+        }
+
+        const mappings = await UserCallerNumber.findAll({
+            where: { user_id: userId },
+            include: [
+                {
+                    model: CallNumber,
+                    as: "callingNumber",
+                    attributes: ["id", "number", "country", "password"],
+                },
+            ],
+            order: [["createdAt", "DESC"]],
+        });
+
+        const data = mappings
+            .filter((m) => m.callingNumber)
+            .map((m) => ({
+                calling_number_id: m.calling_number_id,
+                number: m.callingNumber.number,
+                country: m.callingNumber.country,
+                password: m.callingNumber.password,
+                start_time: m.start_time,
+                end_time: m.end_time,
+                current_balance: m.current_balance,
+            }));
+
+        return res.json({ success: true, data });
+    } catch (err) {
+        logger.error("Fetch calling credentials failed", { error: err.message });
+        res.status(500).json({ error: err.message });
+    }
+};
+
+/** 
  * Handle Stripe Webhooks
  */
 exports.handleStripeWebhook = async (req, res) => {
