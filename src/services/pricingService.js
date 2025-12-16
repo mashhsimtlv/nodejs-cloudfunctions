@@ -146,8 +146,8 @@ class PricingService {
         endTime,
         userId,
         country,
-        planType = "incoming_outgoing",
-        minutesOption = 200,
+        planType,
+        minutesOption,
     }) {
         if (!userId) {
             throw new Error("userId is required");
@@ -159,35 +159,50 @@ class PricingService {
         const rate = this.getPriceForCountry(country);
 
         const minutesOptions = [200, 500, 1000];
+        const planTypes = Object.keys(PLAN_CONFIG);
+
         const quotes = {};
-        minutesOptions.forEach((minutes) => {
-            quotes[minutes] = this.buildQuote({ days, planType, minutes, rate });
+        planTypes.forEach((plan) => {
+            quotes[plan] = {};
+            minutesOptions.forEach((minutes) => {
+                quotes[plan][minutes] = this.buildQuote({
+                    days,
+                    planType: plan,
+                    minutes,
+                    rate,
+                });
+            });
         });
 
-        const selectedQuote = quotes[minutesOption];
-        if (!selectedQuote) {
-            throw new Error("minutesOption must be one of: 200, 500, 1000");
+        let selectedQuote = null;
+        if (planType && minutesOption != null) {
+            const normalizedMinutes = Number(minutesOption);
+            const planQuotes = quotes[planType];
+            if (!planQuotes || !planQuotes[normalizedMinutes]) {
+                throw new Error("Invalid planType or minutesOption");
+            }
+            const quote = planQuotes[normalizedMinutes];
+
+            selectedQuote = await CallPlanQuote.create({
+                user_id: userId,
+                start_time: startDate,
+                end_time: endDate,
+                country,
+                plan_type: planType,
+                minutes_option: normalizedMinutes,
+                days,
+                base_price: quote.basePrice,
+                extra_price: quote.extraPrice,
+                minutes_upgrade_price: quote.minutesUpgradePrice,
+                total_price: quote.totalPrice,
+                per_minute_rate: quote.perMinuteRate,
+                credit_value: quote.creditValue,
+            });
         }
-
-        const record = await CallPlanQuote.create({
-            user_id: userId,
-            start_time: startDate,
-            end_time: endDate,
-            country,
-            plan_type: planType,
-            minutes_option: minutesOption,
-            days,
-            base_price: selectedQuote.basePrice,
-            extra_price: selectedQuote.extraPrice,
-            minutes_upgrade_price: selectedQuote.minutesUpgradePrice,
-            total_price: selectedQuote.totalPrice,
-            per_minute_rate: selectedQuote.perMinuteRate,
-            credit_value: selectedQuote.creditValue,
-        });
 
         return {
             quotes,
-            selectedQuote: record,
+            selectedQuote,
         };
     }
 }

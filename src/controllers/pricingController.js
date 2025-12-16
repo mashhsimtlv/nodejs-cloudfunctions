@@ -7,9 +7,11 @@ exports.calculateCallPlan = async (req, res) => {
             endTime: req.body.endTime ?? req.body.end_time,
             userId: req.body.userId ?? req.body.user_id,
             country: req.body.country,
-            planType: req.body.planType ?? req.body.plan_type ?? "incoming_outgoing",
-            minutesOption:
-                Number(req.body.minutesOption ?? req.body.minutes_option ?? req.body.minutes) || 200,
+            planType: req.body.planType ?? req.body.plan_type,
+            minutesOption: (() => {
+                const raw = req.body.minutesOption ?? req.body.minutes_option ?? req.body.minutes;
+                return raw == null ? undefined : Number(raw);
+            })(),
         };
 
         const data = await pricingService.calculateCallPlan(payload);
