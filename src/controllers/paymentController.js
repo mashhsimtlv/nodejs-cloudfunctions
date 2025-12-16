@@ -30,7 +30,7 @@ exports.createStripePaymentIntent = async (req, res) => {
     console.log("Client IP:", ip);
 
 
-        const { amount, userId, productType, paymentType , planName , planId , device_id } = req.body;
+        const { amount, userId, productType, paymentType , planName , planId , device_id , paymentFor } = req.body;
 
         if (!amount || typeof amount !== "number") {
             return res.status(400).json({ error: "Amount must be a valid number" });
@@ -44,7 +44,8 @@ exports.createStripePaymentIntent = async (req, res) => {
             planName,
             planId,
             device_id,
-            ip
+            ip,
+            paymentFor
         });
 
         // await eventsAPI.paymentIntentCreated({
