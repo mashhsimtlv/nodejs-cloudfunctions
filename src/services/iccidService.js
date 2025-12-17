@@ -41,15 +41,13 @@ class IccidService {
                 iccid: iccidValue,
             });
             // Mirror ICCID to SQL users table when available
-            if (User?.update) {
+
                 try {
                     await User.update({ iccid: iccidValue }, { where: { uid } });
                 } catch (err) {
                     console.error("Failed to update SQL user iccid:", err.message);
                 }
-            } else {
-                console.warn("User model not available; skipping SQL iccid update");
-            }
+
 
             console.log(simtlvToken  , 'sim tlv token')
 
