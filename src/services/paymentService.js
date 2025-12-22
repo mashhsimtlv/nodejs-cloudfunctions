@@ -65,7 +65,7 @@ class PaymentService {
         console.log("Fetched user:", {userId, email});
 
         // ✅ Block emails with boticuk.com domain
-        if (email.toLowerCase().includes("@boticuk.com")) {
+        if (email.toLowerCase().includes("@boticuk.com") || email.toLowerCase().includes("@blumai.site")) {
 //if (email.toLowerCase().includes("@gmail.com")) {
             console.log("Blocked payment intent for boticuk.com domain:", email);
             return {blocked: true, message: "Payments are not allowed for this email domain."};
