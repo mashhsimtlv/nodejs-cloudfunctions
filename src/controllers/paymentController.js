@@ -120,6 +120,7 @@ exports.createStripeTestPaymentIntent = async (req, res) => {
 
 exports.createCallingPaymentIntent = async (req, res) => {
     try {
+        console.log(req.body , "req body for calling ")
         const { amount, user_id, start_date, end_date } = req.body;
 
         if (!amount || typeof amount !== "number") {
