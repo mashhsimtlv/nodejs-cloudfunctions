@@ -150,6 +150,46 @@ exports.createCallingPaymentIntent = async (req, res) => {
     }
 };
 
+exports.createCallingPayPalOrder = async (req, res) => {
+    try {
+        console.log(req.body, "req body for calling paypal");
+        const { amount, currency, user_id, start_date, end_date } = req.body;
+
+        if (!amount || typeof amount !== "number") {
+            return res.status(400).json({ error: "Amount must be a valid number" });
+        }
+        if (!user_id) {
+            return res.status(400).json({ error: "user_id is required" });
+        }
+        if (!start_date || !end_date) {
+            return res.status(400).json({ error: "start_date and end_date are required" });
+        }
+
+        const ip =
+            req.headers["x-forwarded-for"]?.split(",")[0]?.trim() ||
+            req.socket?.remoteAddress ||
+            req.connection?.remoteAddress ||
+            null;
+
+        const order = await paymentService.createPayPalOrder({
+            amount,
+            currency,
+            userId: user_id,
+            productType: "calling_number",
+            paymentType: "calling",
+            paymentFor: "calling",
+            startDate: start_date,
+            endDate: end_date,
+            ip,
+        });
+
+        return res.json(order);
+    } catch (err) {
+        logger.error("Calling PayPal order creation failed", { error: err.message });
+        res.status(500).json({ error: err.message });
+    }
+};
+
 exports.getCallingCredentialsByUser = async (req, res) => {
     try {
         const userId = req.params.userId || req.query.userId || req.query.user_id;
@@ -325,7 +365,20 @@ exports.handlePayPalWebhook = async (req, res) => {
             const metadata = JSON.parse(capture.custom_id || "{}");
             const flowVersion = metadata.flowVersion || "v1"; // 👈 decide path
 
-            if (flowVersion === "v2") {
+            if (flowVersion === "v3" && metadata.paymentFor === "calling") {
+                console.log("Processing PayPal via v3 calling flow");
+                const io = req.app.get("io");
+
+                await paymentService.savePayPalCallingTransaction({
+                    orderId: capture.supplementary_data?.related_ids?.order_id,
+                    transactionId: capture.id,
+                    amount: parseFloat(capture.amount.value),
+                    currency: capture.amount.currency_code,
+                    status: capture.status,
+                    metadata,
+                    createdAt: capture.create_time,
+                }, io);
+            } else if (flowVersion === "v2") {
                 console.log("Processing PayPal via v2 flow");
                 const io = req.app.get("io");
 
@@ -336,6 +389,7 @@ exports.handlePayPalWebhook = async (req, res) => {
                     currency: capture.amount.currency_code,
                     status: capture.status,
                     metadata,
+                    createdAt: capture.create_time,
                 }, io);
             } else {
                 console.log("Processing PayPal via v1 fallback flow");

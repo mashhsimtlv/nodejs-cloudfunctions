@@ -1279,8 +1279,23 @@ class PaymentService {
         }
     }
 
-    async createPayPalOrder({amount, currency, userId, productType, paymentType, planName, planId, device_id, ip}) {
+    async createPayPalOrder({
+        amount,
+        currency,
+        userId,
+        productType,
+        paymentType,
+        planName,
+        planId,
+        device_id,
+        ip,
+        paymentFor,
+        startDate,
+        endDate,
+    }) {
         const accessToken = await getPayPalAccessToken();
+
+        const flowVersion = paymentFor === "calling" ? "v3" : "v2";
 
         // ✅ Store metadata inside `custom_id` (same as your Cloud Function)
         const customId = JSON.stringify({
@@ -1289,9 +1304,12 @@ class PaymentService {
             paymentType,
             planName,
             planId,
-            flowVersion: "v2",
+            flowVersion,
             device_id,
-            ip
+            ip,
+            paymentFor,
+            startDate,
+            endDate,
         });
 
         const response = await axios.post(
@@ -1350,6 +1368,68 @@ class PaymentService {
         );
 
         return response.data;
+    }
+
+    async savePayPalCallingTransaction(data, io) {
+        try {
+            console.log("===== PayPal calling transaction started =====");
+            const {transactionId, amount, metadata = {}, createdAt} = data;
+            const userId = metadata.userId;
+            const productType = metadata.productType || "unknown";
+            const paymentType = metadata.paymentType || "unknown";
+
+            if (!userId) {
+                console.log("Missing userId for PayPal calling transaction", {transactionId});
+                return;
+            }
+
+            const [, createdRow] = await Transaction.findOrCreate({
+                where: {transaction_id: transactionId},
+                defaults: {
+                    user_id: userId,
+                    transaction_id: transactionId,
+                    amount,
+                    provider: "paypal",
+                    product_type: productType,
+                    payment_type: paymentType,
+                    createdAt: createdAt ? new Date(createdAt) : new Date(),
+                },
+            });
+
+            if (!createdRow) {
+                console.log("Duplicate PayPal calling transaction ignored:", transactionId);
+                return;
+            }
+
+            const startTime = metadata.startDate
+                ? new Date(metadata.startDate)
+                : createdAt
+                    ? new Date(createdAt)
+                    : new Date();
+            const endTime = metadata.endDate ? new Date(metadata.endDate) : null;
+
+            const assigned = await this.assignCallingNumber({
+                userId,
+                startTime,
+                endTime,
+            });
+
+            await assigned.mapping.update({current_balance: amount});
+
+            const emitPayload = {
+                number: assigned.number.number,
+                password: assigned.number.password,
+            };
+
+            this.delayedEmit(io, "payment_event_" + userId, {
+                provider: "paypal",
+                type: "sip_number_assigned",
+                data: emitPayload,
+            });
+        } catch (err) {
+            console.log("❌ savePayPalCallingTransaction error", {error: err.message});
+            await this.notifyAdminEmail("PayPal Calling Webhook Failure", err.message);
+        }
     }
 
     // Save PayPal Transaction (similar to Stripe)
