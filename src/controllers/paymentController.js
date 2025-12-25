@@ -133,7 +133,7 @@ exports.createCallingPaymentIntent = async (req, res) => {
             return res.status(400).json({ error: "start_date and end_date are required" });
         }
 
-        const intent = await paymentService.createStripePaymentIntent({
+        const intent = await paymentService.createStripeCallingPaymentIntent({
             amount,
             userId: user_id,
             productType: "calling_number",
@@ -215,12 +215,15 @@ exports.handleStripeWebhook = async (req, res) => {
     try {
         if (event.type === "payment_intent.succeeded") {
             const paymentIntent = event.data.object;
-            const { flowVersion = "v1" } = paymentIntent.metadata || {};
+            const { flowVersion = "v1" , paymentFor = "calling" } = paymentIntent.metadata || {};
 
             if (flowVersion === "v2") {
                 console.log("Processing via v2 flow");
                 await paymentService.saveStripeTransaction(paymentIntent, req.app.get("io"));
-            } else {
+            } else if(flowVersion === "v3" && paymentFor === "calling") {
+                console.log("Processing via v3 flow");
+                await paymentService.saveStripeCallingTransaction(paymentIntent, req.app.get("io"));
+            }else{
                 console.log("Processing via v1 fallback flow");
                 await paymentService.saveLegacyStripeTransaction(paymentIntent);
             }

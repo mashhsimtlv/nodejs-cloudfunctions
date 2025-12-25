@@ -12,7 +12,7 @@ const db = admin.firestore();
 const iccidService = require("../services/iccidService");
 const subscriberService = require("../services/subscriberService");
 const {getMainToken, getToken} = require("../helpers/generalSettings");
-const models = require("../models"); // Sequelize models
+const {models} = require("../models"); // Sequelize models
 const { sequelize, Transaction, CallNumber, UserCallerNumber } = models;
 const User = models.User || models.user; // optional MySQL/Mongo user model
 const ExcelJS = require("exceljs");
@@ -84,6 +84,61 @@ class PaymentService {
                 planName,
                 planId,
                 flowVersion: "v2",
+                device_id,
+                ip,
+                paymentFor,
+                startDate,
+                endDate,
+            },
+        });
+    }
+    async createStripeCallingPaymentIntent({
+        amount,
+        userId,
+        productType,
+        paymentType,
+        planName,
+        planId,
+        device_id,
+        ip,
+        paymentFor,
+        startDate,
+        endDate,
+    }) {
+        console.log("Here is the device id ", device_id);
+
+        // ✅ Use your fetch user method
+        //const user = await this.fetchUser(userId);
+        const userRef = db.collection("app-registered-users").doc(userId);
+        const userSnap = await userRef.get();
+        const user = userSnap.data();
+        if (!user) {
+            throw new Error("User not found");
+        }
+
+        const email = user.email || "";
+        console.log("Fetched user:", {userId, email});
+
+        // ✅ Block emails with boticuk.com domain
+        if (email.toLowerCase().includes("@boticuk.com") || email.toLowerCase().includes("@blumai.site")) {
+//if (email.toLowerCase().includes("@gmail.com")) {
+            console.log("Blocked payment intent for boticuk.com domain:", email);
+            return {blocked: true, message: "Payments are not allowed for this email domain."};
+        }
+
+        // ✅ Proceed with Stripe PaymentIntent
+        return await stripe.paymentIntents.create({
+            amount,
+            currency: "usd",
+            payment_method_types: ["card"],
+            statement_descriptor: "SIMTLV - eSIM&Sim",
+            metadata: {
+                userId,
+                productType,
+                paymentType,
+                planName,
+                planId,
+                flowVersion: "v3",
                 device_id,
                 ip,
                 paymentFor,
@@ -708,7 +763,6 @@ class PaymentService {
                         await this.addSimtlvBalance(reffererIccid, refData, euroAmount, io, simtlvRefToken, "pending");
                     }
 
-
                 }
             }
 
@@ -834,6 +888,64 @@ class PaymentService {
         } catch (err) {
             console.log("❌ saveStripeTransaction error", {error: err.message});
             await this.notifyAdminEmail("Stripe Webhook Failure", err.message);
+        }
+    }
+    async saveStripeCallingTransaction(paymentIntent, io) {
+        try {
+            console.log("Saving Stripe calling transaction...");
+            const {metadata = {}, id, amount_received, created} = paymentIntent;
+            const userId = metadata.userId;
+            const productType = metadata.productType || "unknown";
+            const paymentType = metadata.paymentType || "unknown";
+            const amountUSD = amount_received / 100;
+
+            if (!userId) {
+                console.log("Missing userId for Stripe calling transaction", {transactionId: id});
+                return;
+            }
+
+            const [, createdRow] = await Transaction.findOrCreate({
+                where: {transaction_id: id},
+                defaults: {
+                    user_id: userId,
+                    transaction_id: id,
+                    amount: amountUSD,
+                    provider: "stripe",
+                    product_type: productType,
+                    payment_type: paymentType,
+                    createdAt: new Date(created * 1000),
+                },
+            });
+
+            if (!createdRow) {
+                console.log("Duplicate Stripe calling transaction ignored:", id);
+                return;
+            }
+
+            const startTime = metadata.startDate ? new Date(metadata.startDate) : new Date(created * 1000);
+            const endTime = metadata.endDate ? new Date(metadata.endDate) : null;
+
+            const assigned = await this.assignCallingNumber({
+                userId,
+                startTime,
+                endTime,
+            });
+
+            await assigned.mapping.update({current_balance: amountUSD});
+
+            const emitPayload = {
+                number: assigned.number.number,
+                password: assigned.number.password,
+            };
+
+            this.delayedEmit(io, "payment_event_" + userId, {
+                provider: "stripe",
+                type: "sip_number_assigned",
+                data: emitPayload,
+            });
+        } catch (err) {
+            console.log("❌ saveStripeCallingTransaction error", {error: err.message});
+            await this.notifyAdminEmail("Stripe Calling Webhook Failure", err.message);
         }
     }
 
