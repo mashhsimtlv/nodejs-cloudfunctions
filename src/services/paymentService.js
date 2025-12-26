@@ -13,8 +13,8 @@ const iccidService = require("../services/iccidService");
 const subscriberService = require("../services/subscriberService");
 const {getMainToken, getToken} = require("../helpers/generalSettings");
 const {models} = require("../models"); // Sequelize models
-const { sequelize, Transaction, CallNumber, UserCallerNumber } = require("../models");;
-const User = models.User || models.user; // optional MySQL/Mongo user model
+const { sequelize, Transaction, CallNumber, UserCallerNumber , User } = require("../models");
+// const User = models.User || models.user; // optional MySQL/Mongo user model
 const ExcelJS = require("exceljs");
 
 
