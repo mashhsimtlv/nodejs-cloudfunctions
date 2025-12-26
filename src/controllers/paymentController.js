@@ -150,6 +150,45 @@ exports.createCallingPaymentIntent = async (req, res) => {
     }
 };
 
+exports.createCallingTestPaymentIntent = async (req, res) => {
+    try {
+        console.log(req.body, "req body for calling test");
+        const { amount, user_id, start_date, end_date } = req.body;
+
+        if (!amount || typeof amount !== "number") {
+            return res.status(400).json({ error: "Amount must be a valid number" });
+        }
+        if (!user_id) {
+            return res.status(400).json({ error: "user_id is required" });
+        }
+        if (!start_date || !end_date) {
+            return res.status(400).json({ error: "start_date and end_date are required" });
+        }
+
+        const ip =
+            req.headers["x-forwarded-for"]?.split(",")[0]?.trim() ||
+            req.socket?.remoteAddress ||
+            req.connection?.remoteAddress ||
+            null;
+
+        const intent = await paymentService.createStripeCallingTestPaymentIntent({
+            amount,
+            userId: user_id,
+            productType: "calling_number",
+            paymentType: "calling",
+            paymentFor: "calling",
+            startDate: start_date,
+            endDate: end_date,
+            ip,
+        });
+
+        return res.json({ clientSecret: intent.client_secret });
+    } catch (err) {
+        logger.error("Calling test payment intent failed", { error: err.message });
+        res.status(500).json({ error: err.message });
+    }
+};
+
 exports.createCallingPayPalOrder = async (req, res) => {
     try {
         console.log(req.body, "req body for calling paypal");
@@ -186,6 +225,49 @@ exports.createCallingPayPalOrder = async (req, res) => {
         return res.json(order);
     } catch (err) {
         logger.error("Calling PayPal order creation failed", { error: err.message });
+        res.status(500).json({ error: err.message });
+    }
+};
+
+exports.createCallingPayPalOrderTest = async (req, res) => {
+    try {
+        console.log(req.body, "req body for calling paypal test");
+        const { amount, currency, user_id, start_date, end_date } = req.body;
+
+        if (!amount || typeof amount !== "number") {
+            return res.status(400).json({ error: "Amount must be a valid number" });
+        }
+        if (!user_id) {
+            return res.status(400).json({ error: "user_id is required" });
+        }
+        if (!start_date || !end_date) {
+            return res.status(400).json({ error: "start_date and end_date are required" });
+        }
+
+        const ip =
+            req.headers["x-forwarded-for"]?.split(",")[0]?.trim() ||
+            req.socket?.remoteAddress ||
+            req.connection?.remoteAddress ||
+            null;
+
+        const order = await paymentService.createPayPalOrder({
+            amount,
+            currency,
+            userId: user_id,
+            productType: "calling_number",
+            paymentType: "calling",
+            paymentFor: "calling",
+            startDate: start_date,
+            endDate: end_date,
+            ip,
+            paypalBaseUrl: process.env.PAYPAL_URL_TEST || process.env.PAYPAL_URL,
+            paypalClientId: process.env.PAYPAL_CLIENT_ID_TEST || process.env.PAYPAL_CLIENT_ID,
+            paypalSecret: process.env.PAYPAL_SECRET_TEST || process.env.PAYPAL_SECRET,
+        });
+
+        return res.json(order);
+    } catch (err) {
+        logger.error("Calling PayPal test order creation failed", { error: err.message });
         res.status(500).json({ error: err.message });
     }
 };

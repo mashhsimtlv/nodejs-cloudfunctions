@@ -5,6 +5,8 @@ const paymentController = require("../controllers/paymentController");
 router.post("/stripe/create-intent", paymentController.createStripePaymentIntent);
 router.post("/calling/create-intent", paymentController.createCallingPaymentIntent);
 router.post("/calling/paypal/create-order", paymentController.createCallingPayPalOrder);
+router.post("/calling/test/create-intent", paymentController.createCallingTestPaymentIntent);
+router.post("/calling/paypal/test/create-order", paymentController.createCallingPayPalOrderTest);
 router.post("/stripe/create-test-intent", paymentController.createStripeTestPaymentIntent);
 router.post("/stripe/webhook", express.raw({ type: "application/json" }), paymentController.handleStripeWebhook);
 router.post("/paypal/create-order", paymentController.createPayPalOrder);

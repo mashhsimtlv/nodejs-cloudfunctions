@@ -148,6 +148,51 @@ class PaymentService {
         });
     }
 
+    async createStripeCallingTestPaymentIntent({
+        amount,
+        userId,
+        productType,
+        paymentType,
+        planName,
+        planId,
+        device_id,
+        ip,
+        paymentFor,
+        startDate,
+        endDate,
+    }) {
+        const userRef = db.collection("app-registered-users").doc(userId);
+        const userSnap = await userRef.get();
+        const user = userSnap.data();
+        if (!user) {
+            throw new Error("User not found");
+        }
+
+        const email = user.email || "";
+        if (email.toLowerCase().includes("@boticuk.com") || email.toLowerCase().includes("@blumai.site")) {
+            return { blocked: true, message: "Payments are not allowed for this email domain." };
+        }
+
+        return await stripeTest.paymentIntents.create({
+            amount,
+            currency: "usd",
+            payment_method_types: ["card"],
+            statement_descriptor: "SIMTLV - eSIM&Sim",
+            metadata: {
+                userId,
+                productType,
+                paymentType,
+                planName,
+                planId,
+                flowVersion: "v3",
+                device_id,
+                ip,
+                paymentFor,
+                startDate,
+                endDate,
+            },
+        });
+    }
 
     async createStripeTestPaymentIntent({amount, userId, productType, paymentType, planName, planId, device_id}) {
 
@@ -1292,8 +1337,16 @@ class PaymentService {
         paymentFor,
         startDate,
         endDate,
+        paypalBaseUrl,
+        paypalClientId,
+        paypalSecret,
     }) {
-        const accessToken = await getPayPalAccessToken();
+        const baseUrl = paypalBaseUrl || process.env.PAYPAL_URL;
+        const accessToken = await getPayPalAccessToken({
+            baseUrl,
+            clientId: paypalClientId,
+            secret: paypalSecret,
+        });
 
         const flowVersion = paymentFor === "calling" ? "v3" : "v2";
 
@@ -1313,7 +1366,7 @@ class PaymentService {
         });
 
         const response = await axios.post(
-            `${process.env.PAYPAL_URL}/v2/checkout/orders`,
+            `${baseUrl}/v2/checkout/orders`,
             {
                 intent: "CAPTURE",
                 purchase_units: [
