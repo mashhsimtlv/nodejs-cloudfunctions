@@ -131,7 +131,10 @@ class PaymentService {
             amount,
             currency: "usd",
             payment_method_types: ["card"],
-            statement_descriptor: "SIMTLV",
+
+            // ✅ for card payments use suffix (NOT statement_descriptor)
+            statement_descriptor_suffix: "SIMTLV",
+
             metadata: {
                 userId,
                 productType,
@@ -146,6 +149,7 @@ class PaymentService {
                 endDate,
             },
         });
+
     }
 
     async createStripeCallingTestPaymentIntent({
