@@ -310,6 +310,130 @@ exports.getCallingCredentialsByUser = async (req, res) => {
     }
 };
 
+
+
+exports.handlePayPalWebhookTest = async (req, res) => {
+    const testEvent = {
+        event_type: "PAYMENT.CAPTURE.COMPLETED",
+        resource: {
+            id: "TEST_CAPTURE_ID",
+            custom_id: "{\"userId\":\"USER_ID\",\"paymentFor\":\"calling\",\"flowVersion\":\"v3\"}",
+            amount: {
+                value: "10.00",
+                currency_code: "USD",
+            },
+            status: "COMPLETED",
+            create_time: "2025-01-01T00:00:00Z",
+            supplementary_data: {
+                related_ids: {
+                    order_id: "TEST_ORDER_ID",
+                },
+            },
+        },
+    };
+
+    try {
+        console.log("PayPal webhook received", { eventType: testEvent.event_type });
+
+        if (testEvent.event_type === "PAYMENT.CAPTURE.COMPLETED") {
+            const capture = testEvent.resource;
+            const metadata = JSON.parse(capture.custom_id || "{}");
+            const flowVersion = metadata.flowVersion || "v1"; // 👈 decide path
+
+            if (flowVersion === "v3" && metadata.paymentFor === "calling") {
+                console.log("Processing PayPal via v3 calling flow");
+                const io = req.app.get("io");
+
+                await paymentService.savePayPalCallingTransaction({
+                    orderId: capture.supplementary_data?.related_ids?.order_id,
+                    transactionId: capture.id,
+                    amount: parseFloat(capture.amount.value),
+                    currency: capture.amount.currency_code,
+                    status: capture.status,
+                    metadata,
+                    createdAt: capture.create_time,
+                }, io);
+            } else if (flowVersion === "v2") {
+                console.log("Processing PayPal via v2 flow");
+                const io = req.app.get("io");
+
+                await paymentService.savePayPalTransaction({
+                    orderId: capture.supplementary_data?.related_ids?.order_id,
+                    transactionId: capture.id,
+                    amount: parseFloat(capture.amount.value),
+                    currency: capture.amount.currency_code,
+                    status: capture.status,
+                    metadata,
+                    createdAt: capture.create_time,
+                }, io);
+            } else {
+                console.log("Processing PayPal via v1 fallback flow");
+
+                await db.collection("transactions").add({
+                    userId: metadata.userId || "unknown",
+                    amount: parseFloat(capture.amount.value),
+                    transactionId: capture.id,
+                    transactionTime: Timestamp.fromMillis(new Date(capture.create_time).getTime()),
+                    isUsed: false,
+                    provider: "paypal",
+                    paymentType: metadata.paymentType || "unknown",
+                    productType: metadata.productType || "unknown",
+                });
+
+                console.log("✅ Legacy PayPal transaction saved:", capture.id);
+            }
+        }
+
+        res.status(200).send("Webhook received");
+    } catch (err) {
+        logger.error("PayPal webhook failed", { error: err.message });
+        res.status(400).send(`Webhook error: ${err.message}`);
+    }
+};
+
+
+exports.handleStripeWebhookTest = async (req, res) => {
+    const testEvent = {
+        type: "payment_intent.succeeded",
+        data: {
+            object: {
+                id: "pi_test_webhook_123",
+                amount_received: 1000,
+                metadata: {
+                    flowVersion: "v3",
+                    paymentFor: "calling",
+                    userId: "USER_ID",
+                },
+            },
+        },
+    };
+
+    console.log("✅ Stripe webhook verified", { type: testEvent.type });
+
+    try {
+        if (testEvent.type === "payment_intent.succeeded") {
+            const paymentIntent = testEvent.data.object;
+            const { flowVersion = "v1" , paymentFor = "calling" } = paymentIntent.metadata || {};
+
+            if (flowVersion === "v2") {
+                console.log("Processing via v2 flow");
+                await paymentService.saveStripeTransaction(paymentIntent, req.app.get("io"));
+            } else if(flowVersion === "v3" && paymentFor === "calling") {
+                console.log("Processing via v3 flow");
+                await paymentService.saveStripeCallingTransaction(paymentIntent, req.app.get("io"));
+            }else{
+                console.log("Processing via v1 fallback flow");
+                await paymentService.saveLegacyStripeTransaction(paymentIntent);
+            }
+        }
+
+        res.send({ received: true });
+    } catch (err) {
+        console.error("❌ Stripe webhook processing failed:", err.message);
+        return res.status(500).send(`Webhook handler failed: ${err.message}`);
+    }
+};
+
 /** 
  * Handle Stripe Webhooks
  */
