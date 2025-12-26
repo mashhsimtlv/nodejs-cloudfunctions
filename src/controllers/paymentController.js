@@ -397,6 +397,7 @@ exports.handleStripeWebhookTest = async (req, res) => {
         type: "payment_intent.succeeded",
         data: {
             object: {
+                created: 1766756834,
                 id: "pi_test_webhook_123",
                 amount_received: 1000,
                 metadata: {
