@@ -131,7 +131,7 @@ class PaymentService {
             amount,
             currency: "usd",
             payment_method_types: ["card"],
-            statement_descriptor: "SIMTLV - eSIM&Sim",
+            statement_descriptor: "SIMTLV",
             metadata: {
                 userId,
                 productType,
