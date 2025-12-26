@@ -333,10 +333,12 @@ exports.handlePayPalWebhookTest = async (req, res) => {
     };
 
     try {
+        const event = req.body;
+
         console.log("PayPal webhook received", { eventType: testEvent.event_type });
 
         if (testEvent.event_type === "PAYMENT.CAPTURE.COMPLETED") {
-            const capture = testEvent.resource;
+            const capture = event.resource;
             const metadata = JSON.parse(capture.custom_id || "{}");
             const flowVersion = metadata.flowVersion || "v1"; // 👈 decide path
 
@@ -410,10 +412,12 @@ exports.handleStripeWebhookTest = async (req, res) => {
     };
 
     console.log("✅ Stripe webhook verified", { type: testEvent.type });
+    let event;
 
+    event = req.body;
     try {
         if (testEvent.type === "payment_intent.succeeded") {
-            const paymentIntent = testEvent.data.object;
+            const paymentIntent = event.data.object;
             const { flowVersion = "v1" , paymentFor = "calling" } = paymentIntent.metadata || {};
 
             if (flowVersion === "v2") {
