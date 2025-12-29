@@ -944,7 +944,7 @@ class PaymentService {
     }
     async saveStripeCallingTransaction(paymentIntent, io) {
         try {
-            console.log("Saving Stripe calling transaction...");
+            console.log("Saving Stripe calling transaction..." , paymentIntent);
             const {metadata = {}, id, amount_received, created} = paymentIntent;
             const userId = metadata.userId;
             const productType = metadata.productType || "unknown";
