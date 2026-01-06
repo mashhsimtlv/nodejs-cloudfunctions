@@ -892,12 +892,14 @@ class PaymentService {
                         userId,
                         startTime,
                         endTime,
+                        amount: usdAmount,
                     });
                     console.log("📞 Calling number assigned", {
                         userId,
                         callingNumber: assigned.number.number,
                         startTime,
                         endTime,
+                        isExisting: assigned.isExisting,
                     });
                 } catch (assignErr) {
                     console.error("❌ Failed to assign calling number:", assignErr.message);
@@ -981,9 +983,14 @@ class PaymentService {
                 userId,
                 startTime,
                 endTime,
+                amount: amountUSD,
             });
 
-            await assigned.mapping.update({current_balance: amountUSD});
+            // Balance is already updated in assignCallingNumber if existing assignment
+            // Only update if it's a new assignment (though it's already set in create)
+            if (!assigned.isExisting) {
+                await assigned.mapping.update({current_balance: amountUSD});
+            }
 
             const emitPayload = {
                 number: assigned.number.number,
@@ -1024,10 +1031,49 @@ class PaymentService {
 
     /**
      * Assign a free calling number to a user and mark it occupied
+     * If user already has an assigned number, just add balance to existing assignment
      */
-    async assignCallingNumber({userId, startTime, endTime}) {
+    async assignCallingNumber({userId, startTime, endTime, amount = 0}) {
         const t = await sequelize.transaction();
         try {
+            // Check if user already has an active assignment
+            const existingMapping = await UserCallerNumber.findOne({
+                where: {
+                    user_id: userId,
+                    // Check if assignment is still active (end_time is null or in the future)
+                    [sequelize.Op.or]: [
+                        { end_time: null },
+                        { end_time: { [sequelize.Op.gt]: new Date() } }
+                    ]
+                },
+                include: [
+                    {
+                        model: CallNumber,
+                        as: "callingNumber",
+                    }
+                ],
+                transaction: t,
+                lock: t.LOCK.UPDATE,
+            });
+
+            // If user already has an assigned number, just add balance
+            if (existingMapping) {
+                const newBalance = parseFloat(existingMapping.current_balance || 0) + parseFloat(amount || 0);
+                await existingMapping.update(
+                    { current_balance: newBalance },
+                    { transaction: t }
+                );
+                // Reload to get updated balance
+                await existingMapping.reload({ transaction: t });
+                await t.commit();
+                return {
+                    number: existingMapping.callingNumber,
+                    mapping: existingMapping,
+                    isExisting: true
+                };
+            }
+
+            // No existing assignment - proceed with new assignment
             const number = await CallNumber.findOne({
                 where: {is_occupied: false},
                 order: [["id", "ASC"]],
@@ -1047,13 +1093,13 @@ class PaymentService {
                     calling_number_id: number.id,
                     start_time: startTime,
                     end_time: endTime,
-                    current_balance: 0,
+                    current_balance: amount || 0,
                 },
                 {transaction: t}
             );
 
             await t.commit();
-            return {number, mapping};
+            return {number, mapping, isExisting: false};
         } catch (err) {
             await t.rollback();
             throw err;
@@ -1472,9 +1518,14 @@ class PaymentService {
                 userId,
                 startTime,
                 endTime,
+                amount: amount,
             });
 
-            await assigned.mapping.update({current_balance: amount});
+            // Balance is already updated in assignCallingNumber if existing assignment
+            // Only update if it's a new assignment (though it's already set in create)
+            if (!assigned.isExisting) {
+                await assigned.mapping.update({current_balance: amount});
+            }
 
             const emitPayload = {
                 number: assigned.number.number,
