@@ -971,6 +971,8 @@ class PaymentService {
                 },
             });
 
+            console.log("transaction data")
+
             if (!createdRow) {
                 console.log("Duplicate Stripe calling transaction ignored:", id);
                 return;
@@ -1002,6 +1004,7 @@ class PaymentService {
                 type: "sip_number_assigned",
                 data: emitPayload,
             });
+
         } catch (err) {
             console.log("❌ saveStripeCallingTransaction error", {error: err.message});
             await this.notifyAdminEmail("Stripe Calling Webhook Failure", err.message);
@@ -1041,10 +1044,6 @@ class PaymentService {
                 where: {
                     user_id: userId,
                     // Check if assignment is still active (end_time is null or in the future)
-                    [sequelize.Op.or]: [
-                        { end_time: null },
-                        { end_time: { [sequelize.Op.gt]: new Date() } }
-                    ]
                 },
                 include: [
                     {
