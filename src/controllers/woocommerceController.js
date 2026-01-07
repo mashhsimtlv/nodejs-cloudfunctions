@@ -200,6 +200,26 @@ exports.getAllTags = async (req, res) => {
     }
 };
 
+exports.getAllConversation = async (req, res) => {
+    const body = req.body;
+
+    console.log(" Webhook Received:", JSON.stringify(body, null, 2));
+
+    try {
+
+
+        // ALWAYS respond 200 OK
+        return res.status(200).json({ success: true });
+
+    } catch (err) {
+        // Only print, do not send 500
+        console.error("❌ Webhook error (ignored):", err.message);
+
+        // Still return 200 OK
+        return res.status(200).json({ success: false });
+    }
+};
+
 
 exports.listTags = async (req, res) => {
     try {
