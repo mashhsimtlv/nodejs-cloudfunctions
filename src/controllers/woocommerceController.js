@@ -6,6 +6,7 @@ const {
     ContactTag,
     ContactTagStatus,
     ContactTagComment,
+    GooglePhoneOrder,
 } = require("../models");
 
 // Normalize webhook payloads so we can store and emit the same shape consistently
@@ -206,6 +207,26 @@ exports.getAllConversation = async (req, res) => {
     console.log(" Webhook Received:", JSON.stringify(body, null, 2));
 
     try {
+        const payload = {
+            googleId: body?.contact?.id ? String(body.contact.id) : null,
+            phone: body?.contact?.phone ? String(body.contact.phone) : null,
+            webhookData: JSON.stringify(body),
+            type: "respond io",
+            orderNumber:
+                body?.order_number ??
+                body?.orderNumber ??
+                body?.order?.number ??
+                body?.order?.id ??
+                null,
+            orderValue:
+                body?.order_value ??
+                body?.orderValue ??
+                body?.order?.total ??
+                body?.order?.total_price ??
+                null,
+        };
+
+        await GooglePhoneOrder.create(payload);
 
 
         // ALWAYS respond 200 OK
