@@ -1,5 +1,6 @@
 const subscriberService = require("../services/subscriberService");
 const logger = require("../helpers/logger");
+const axios = require("axios");
 const WooCommerceRestApi = require("@woocommerce/woocommerce-rest-api").default;
 const { Op } = require("sequelize");
 const {
@@ -7,6 +8,7 @@ const {
     ContactTagStatus,
     ContactTagComment,
     GooglePhoneOrder,
+    sequelize,
 } = require("../models");
 
 // Normalize webhook payloads so we can store and emit the same shape consistently
@@ -70,6 +72,61 @@ const emitContactTagEvent = (io, tagData, targetUserIds = []) => {
             data: emitPayload,
         });
     });
+};
+
+const extractRefCode = (message) => {
+    if (!message || typeof message !== "string") {
+        return null;
+    }
+    const match = message.match(/\[Ref Code:\s*([A-Za-z0-9_-]+)\s*\]/i);
+    return match ? match[1] : null;
+};
+
+const fetchGclidRecord = async (code) => {
+    if (!code) return null;
+    const [rows] = await sequelize.query(
+        "SELECT * FROM gclid_codes WHERE code = ? LIMIT 1",
+        { replacements: [code] }
+    );
+    return Array.isArray(rows) && rows.length ? rows[0] : null;
+};
+
+const normalizeLeadPayload = (source) => ({
+    maskyoo: source?.maskyoo ?? null,
+    cli: source?.cli ?? null,
+    callDate: source?.call_date ?? source?.date ?? null,
+    callTime: source?.call_time ?? source?.time ?? null,
+    callStatus: source?.call_status ?? source?.callstatus ?? null,
+    callDuration: source?.call_duration ?? source?.callduration ?? null,
+    gclid: source?.gclid ?? null,
+    pageLocation: source?.page_location ?? null,
+    status: null,
+});
+
+const postJson = async (url, payload, headers = {}) => {
+    const response = await axios.post(url, payload, { headers });
+    return response.status;
+};
+
+const fetchCustomerByPhone = async (phone) => {
+    const supabaseUrl = process.env.SUPABASE_URL;
+    const supabaseKey =
+        process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY;
+    if (!supabaseUrl || !supabaseKey || !phone) {
+        return null;
+    }
+    const endpoint = `${supabaseUrl.replace(/\/+$/, "")}/rest/v1/customers?phone=eq.${encodeURIComponent(
+        phone
+    )}&limit=1`;
+    const response = await axios.get(endpoint, {
+        headers: {
+            apikey: supabaseKey,
+            Authorization: `Bearer ${supabaseKey}`,
+        },
+    });
+    return Array.isArray(response.data) && response.data.length
+        ? response.data[0]
+        : null;
 };
 
 
@@ -228,6 +285,45 @@ exports.getAllConversation = async (req, res) => {
 
         await GooglePhoneOrder.create(payload);
 
+        const refCode = extractRefCode(body?.conversation?.firstIncomingMessage);
+        if (!refCode) {
+            return res.status(200).json({ success: true });
+        }
+
+        const gclidRecord = await fetchGclidRecord(refCode);
+        if (!gclidRecord) {
+            console.log("No gclid_codes entry found for ref code:", refCode);
+            return res.status(200).json({ success: true });
+        }
+
+        const leadPhone = gclidRecord?.phone ?? gclidRecord?.phone_number ?? null;
+        if (!leadPhone) {
+            console.warn("gclid_codes record missing phone for ref code:", refCode);
+            return res.status(200).json({ success: true });
+        }
+
+        const customer = await fetchCustomerByPhone(leadPhone);
+        if (!customer) {
+            console.log("No supabase customer found for phone:", leadPhone);
+            return res.status(200).json({ success: true });
+        }
+
+        const baseUrl = "https://app-link.simtlv.co.il";
+        if (!baseUrl) {
+            console.warn("BASE_URL not set; skipping transaction API call.");
+            return res.status(200).json({ success: true });
+        }
+
+        const endpoint = `${baseUrl.replace(/\/+$/, "")}/api/transaction/store-leads-orders`;
+        const leadPayload = normalizeLeadPayload(gclidRecord);
+        try {
+            const statusCode = await postJson(endpoint, leadPayload);
+            if (!(statusCode >= 200 && statusCode < 300)) {
+                console.error("Transaction API returned non-2xx:", statusCode);
+            }
+        } catch (error) {
+            console.error("Failed to forward to transaction API:", error);
+        }
 
         // ALWAYS respond 200 OK
         return res.status(200).json({ success: true });
