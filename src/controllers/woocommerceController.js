@@ -88,7 +88,7 @@ const fetchGclidRecord = async (code) => {
         "SELECT * FROM gclid_codes WHERE code = ? LIMIT 1",
         { replacements: [code] }
     );
-    console.log(rows , "sdfsdfdsf");
+    console.log(rows , rows[0] , "sdfsdfdsf");
     return Array.isArray(rows) && rows.length ? rows[0] : null;
 };
 
