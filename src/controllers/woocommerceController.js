@@ -92,17 +92,28 @@ const fetchGclidRecord = async (code) => {
     return Array.isArray(rows) && rows.length ? rows[0] : null;
 };
 
-const normalizeLeadPayload = (source) => ({
-    maskyoo: source?.maskyoo ?? null,
-    cli: source?.cli ?? null,
-    callDate: source?.call_date ?? source?.date ?? null,
-    callTime: source?.call_time ?? source?.time ?? null,
-    callStatus: source?.call_status ?? source?.callstatus ?? null,
-    callDuration: source?.call_duration ?? source?.callduration ?? null,
-    gclid: source?.gclid ?? null,
-    pageLocation: source?.page_location ?? null,
-    status: null,
-});
+const getCurrentDateTimeParts = () => {
+    const now = new Date();
+    const pad = (value) => String(value).padStart(2, "0");
+    const date = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+    const time = `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+    return { date, time };
+};
+
+const normalizeLeadPayload = (source, phone) => {
+    const { date, time } = getCurrentDateTimeParts();
+    return {
+        maskyoo: "respondio",
+        cli: phone ?? source?.phone ?? source?.phone_number ?? source?.cli ?? null,
+        callDate: date,
+        callTime: time,
+        callStatus: source?.call_status ?? source?.callstatus ?? null,
+        callDuration: source?.call_duration ?? source?.callduration ?? null,
+        gclid: source?.gclid ?? null,
+        pageLocation: source?.page_location ?? null,
+        status: null,
+    };
+};
 
 const postJson = async (url, payload, headers = {}) => {
     const response = await axios.post(url, payload, { headers });
@@ -298,14 +309,11 @@ exports.getAllConversation = async (req, res) => {
         }
 
         const leadPhone = gclidRecord?.phone ?? gclidRecord?.phone_number ?? null;
-        if (!leadPhone) {
-            console.warn("gclid_codes record missing phone for ref code:", refCode);
-            return res.status(200).json({ success: true });
-        }
-
-        const customer = await fetchCustomerByPhone(leadPhone);
-        if (!customer) {
-            console.log("No supabase customer found for phone:", leadPhone);
+        if (!leadPhone || !gclidRecord?.gclid) {
+            console.log("Missing required lead fields:", {
+                phone: leadPhone,
+                gclid: gclidRecord?.gclid ?? null,
+            });
             return res.status(200).json({ success: true });
         }
 
@@ -316,7 +324,7 @@ exports.getAllConversation = async (req, res) => {
         }
 
         const endpoint = `${baseUrl.replace(/\/+$/, "")}/api/transaction/store-leads-orders`;
-        const leadPayload = normalizeLeadPayload(gclidRecord);
+        const leadPayload = normalizeLeadPayload(gclidRecord, leadPhone);
         try {
             const statusCode = await postJson(endpoint, leadPayload);
             if (!(statusCode >= 200 && statusCode < 300)) {
