@@ -308,7 +308,7 @@ exports.getAllConversation = async (req, res) => {
             return res.status(200).json({ success: true });
         }
 
-        const leadPhone = gclidRecord?.phone ?? gclidRecord?.phone_number ?? null;
+        const leadPhone = body?.contact?.phone ? String(body.contact.phone) : null;
         if (!leadPhone || !gclidRecord?.gclid) {
             console.log("Missing required lead fields:", {
                 phone: leadPhone,
