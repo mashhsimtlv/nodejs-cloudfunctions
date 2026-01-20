@@ -78,8 +78,13 @@ const extractRefCode = (message) => {
     if (!message || typeof message !== "string") {
         return null;
     }
-    const match = message.match(/\[Ref Code:\s*([A-Za-z0-9_-]+)\s*\]/i);
-    return match ? match[1] : null;
+    const match = message.match(
+        /\[Ref Code:\s*([A-Za-z0-9_-]+)\s*\]|(?:^|[?&\s])ref=([A-Za-z0-9_-]+)/i
+    );
+    if (!match) {
+        return null;
+    }
+    return match[1] || match[2] || null;
 };
 
 const fetchGclidRecord = async (code) => {
