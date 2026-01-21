@@ -334,6 +334,7 @@ exports.getAllConversation = async (req, res) => {
         const endpoint = `${baseUrl.replace(/\/+$/, "")}/api/transaction/store-leads-orders`;
         const leadPayload = normalizeLeadPayload(gclidRecord, leadPhone);
         try {
+            console.log(leadPayload , "lead payload to send to transaction api")
             const statusCode = await postJson(endpoint, leadPayload);
             if (!(statusCode >= 200 && statusCode < 300)) {
                 console.error("Transaction API returned non-2xx:", statusCode);
