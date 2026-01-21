@@ -65,7 +65,7 @@ class PaymentService {
         console.log("Fetched user:", {userId, email});
 
         // ✅ Block emails with boticuk.com domain
-        if (email.toLowerCase().includes("@boticuk.com") || email.toLowerCase().includes("@blumai.site") || email.toLowerCase().includes("msjsiee3@gmail.com") || email.toLowerCase().includes("mashhoodr.rehman@gmail.com")) {
+        if (email.toLowerCase().includes("@boticuk.com") || email.toLowerCase().includes("@blumai.site") || email.toLowerCase().includes("msjsiee3@gmail.com") || email.toLowerCase().includes("tutu68863@gmail.com") || email.toLowerCase().includes("rendrapramuja@gmail.com")) {
 //if (email.toLowerCase().includes("@gmail.com")) {
             console.log("Blocked payment intent for boticuk.com domain:", email);
             return {blocked: true, message: "Payments are not allowed for this email domain."};
