@@ -79,7 +79,7 @@ const extractRefCode = (message) => {
         return null;
     }
     const match = message.match(
-        /\[Ref Code:\s*([A-Za-z0-9_-]+)\s*\]|(?:^|[?&\s])ref=([A-Za-z0-9_-]+)/i
+        /\[Ref Code:\s*([A-Za-z0-9_-]+)\s*\]|(?:^|[?&\s])refg=([A-Za-z0-9_-]+)/i
     );
     if (!match) {
         return null;
