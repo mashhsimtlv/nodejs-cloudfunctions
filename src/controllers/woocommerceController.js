@@ -115,7 +115,7 @@ const normalizeLeadPayload = (source, phone) => {
         callStatus: source?.call_status ?? source?.callstatus ?? null,
         callDuration: source?.call_duration ?? source?.callduration ?? null,
         gclid: source?.gclid ?? null,
-        pageLocation: source?.page_location ?? null,
+        pageLocation: source?.landing_url ?? null,
         status: null,
     };
 };
