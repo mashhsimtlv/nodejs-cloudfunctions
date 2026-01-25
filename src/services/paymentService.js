@@ -1188,7 +1188,6 @@ class PaymentService {
             }
         }
     }
-}
 
 
 /**
