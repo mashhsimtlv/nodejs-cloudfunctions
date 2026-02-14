@@ -2002,7 +2002,7 @@ usdToEur(usd) {
 
                 await this.addHistory(referrerId, {
                     amount: refBonus,
-                    bonus: null,
+                    bonus: 0,
                     currentBonus: null,
                     dateTime: new Date().toISOString(),
                     isPayAsyouGo: true,
@@ -2022,7 +2022,7 @@ usdToEur(usd) {
 
                 await this.addHistory(userId, {
                     amount: 5,
-                    bonus: null,
+                    bonus: 0,
                     currentBonus: null,
                     dateTime: new Date().toISOString(),
                     isPayAsyouGo: true,
