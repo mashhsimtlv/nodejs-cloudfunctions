@@ -73,6 +73,7 @@ class PaymentService {
             || email.toLowerCase().includes("budihartono9110@gmail.com")
             || email.toLowerCase().includes("megabajabintaro540@gmail.com")
             || email.toLowerCase().includes("stokcilzsuga8@gmail.com")
+            || email.toLowerCase().includes("adirojak883@gmail.com")
         ) {
             //if (email.toLowerCase().includes("@gmail.com")) {
             console.log("Blocked payment intent for boticuk.com domain:", email);
