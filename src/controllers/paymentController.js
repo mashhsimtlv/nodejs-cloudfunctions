@@ -1,13 +1,13 @@
 const paymentService = require("../services/paymentService");
 const logger = require("../helpers/logger");
-const {  Timestamp } = require("../config/db");
+const { Timestamp } = require("../config/db");
 const axios = require("axios");
 const Stripe = require("stripe");
 const stripe = Stripe(process.env.STRIPE_SECRET_KEY);
 const admin = require('./../helpers/firebase')
 const db = admin.firestore();
 const eventsAPI = require("./../services/events.service");
-const { sequelize, Transaction, CallNumber, UserCallerNumber } = require("../models"); // Sequelize models
+const { sequelize, Transaction, CallNumber, UserCallerNumber, UnpaidTransaction } = require("../models"); // Sequelize models
 
 
 
@@ -17,9 +17,9 @@ const { sequelize, Transaction, CallNumber, UserCallerNumber } = require("../mod
  */
 exports.createStripePaymentIntent = async (req, res) => {
     // try {
-        const io = req.app.get("io");
+    const io = req.app.get("io");
 
-        console.log(req.body , "req body")
+    console.log(req.body, "req body")
 
     const ip =
         req.headers["x-forwarded-for"]?.split(",")[0]?.trim() ||
@@ -30,48 +30,68 @@ exports.createStripePaymentIntent = async (req, res) => {
     console.log("Client IP:", ip);
 
 
-        const { amount, userId, productType, paymentType , planName , planId , device_id , paymentFor } = req.body;
+    const { amount, userId, productType, paymentType, planName, planId, device_id, paymentFor } = req.body;
 
-        if (!amount || typeof amount !== "number") {
-            return res.status(400).json({ error: "Amount must be a valid number" });
-        }
+    if (!amount || typeof amount !== "number") {
+        return res.status(400).json({ error: "Amount must be a valid number" });
+    }
 
-        const intent = await paymentService.createStripePaymentIntent({
-            amount,
-            userId,
-            productType,
-            paymentType,
-            planName,
-            planId,
-            device_id,
-            ip,
-            paymentFor
+    const intent = await paymentService.createStripePaymentIntent({
+        amount,
+        userId,
+        productType,
+        paymentType,
+        planName,
+        planId,
+        device_id,
+        ip,
+        paymentFor
+    });
+
+    // Save to UnpaidTransaction table
+    try {
+        const userRef = db.collection("app-registered-users").doc(userId);
+        const userSnap = await userRef.get();
+        const userData = userSnap.data();
+        const userEmail = userData?.email || "";
+
+        await UnpaidTransaction.create({
+            user_id: String(userId),
+            transaction_id: intent.id,
+            user_email: userEmail,
+            status: "unpaid",
+            page_source: req.body.page_source || paymentFor || productType || null,
+            amount: String(amount),
         });
+        console.log("✅ [UnpaidTransaction] Saved record for intent:", intent.id);
+    } catch (saveErr) {
+        console.error("❌ [UnpaidTransaction] Failed to save record:", saveErr.message);
+    }
 
-        // await eventsAPI.paymentIntentCreated({
-        //     provider: "stripe",
-        //     clientSecret: intent.client_secret,
-        //     amount,
-        //     userId,
-        //     productType,
-        //     paymentType,
-        //     planName,
-        //     planId,
-        //     device_id,
-        // });
+    // await eventsAPI.paymentIntentCreated({
+    //     provider: "stripe",
+    //     clientSecret: intent.client_secret,
+    //     amount,
+    //     userId,
+    //     productType,
+    //     paymentType,
+    //     planName,
+    //     planId,
+    //     device_id,
+    // });
 
 
 
 
-        logger.info("Stripe payment intent created", {
-            userId,
-            amount,
-            productType,
-            paymentType,
-            clientSecret: intent.client_secret,
-        });
+    logger.info("Stripe payment intent created", {
+        userId,
+        amount,
+        productType,
+        paymentType,
+        clientSecret: intent.client_secret,
+    });
 
-        res.json({ clientSecret: intent.client_secret });
+    res.json({ clientSecret: intent.client_secret });
     // } catch (err) {
     //     logger.error("Stripe payment intent failed", { error: err.message });
     //     res.status(500).json({ error: err.message });
@@ -81,10 +101,10 @@ exports.createStripeTestPaymentIntent = async (req, res) => {
     try {
         const io = req.app.get("io");
 
-        console.log(req.body , "req body")
+        console.log(req.body, "req body")
 
 
-        const { amount, userId, productType, paymentType , planName , planId , device_id } = req.body;
+        const { amount, userId, productType, paymentType, planName, planId, device_id } = req.body;
 
         if (!amount || typeof amount !== "number") {
             return res.status(400).json({ error: "Amount must be a valid number" });
@@ -120,7 +140,7 @@ exports.createStripeTestPaymentIntent = async (req, res) => {
 
 exports.createCallingPaymentIntent = async (req, res) => {
     try {
-        console.log(req.body , "req body for calling ")
+        console.log(req.body, "req body for calling ")
         const { amount, user_id, start_date, end_date } = req.body;
 
         if (!amount || typeof amount !== "number") {
@@ -418,15 +438,15 @@ exports.handleStripeWebhookTest = async (req, res) => {
     try {
         if (testEvent.type === "payment_intent.succeeded") {
             const paymentIntent = event.data.object;
-            const { flowVersion = "v1" , paymentFor = "calling" } = paymentIntent.metadata || {};
+            const { flowVersion = "v1", paymentFor = "calling" } = paymentIntent.metadata || {};
 
             if (flowVersion === "v2") {
                 console.log("Processing via v2 flow");
                 await paymentService.saveStripeTransaction(paymentIntent, req.app.get("io"));
-            } else if(flowVersion === "v3" && paymentFor === "calling") {
+            } else if (flowVersion === "v3" && paymentFor === "calling") {
                 console.log("Processing via v3 flow");
                 await paymentService.saveStripeCallingTransaction(paymentIntent, req.app.get("io"));
-            }else{
+            } else {
                 console.log("Processing via v1 fallback flow");
                 await paymentService.saveLegacyStripeTransaction(paymentIntent);
             }
@@ -466,15 +486,15 @@ exports.handleStripeWebhook = async (req, res) => {
     try {
         if (event.type === "payment_intent.succeeded") {
             const paymentIntent = event.data.object;
-            const { flowVersion = "v1" , paymentFor = "calling" } = paymentIntent.metadata || {};
+            const { flowVersion = "v1", paymentFor = "calling" } = paymentIntent.metadata || {};
 
             if (flowVersion === "v2") {
                 console.log("Processing via v2 flow");
                 await paymentService.saveStripeTransaction(paymentIntent, req.app.get("io"));
-            } else if(flowVersion === "v3" && paymentFor === "calling") {
+            } else if (flowVersion === "v3" && paymentFor === "calling") {
                 console.log("Processing via v3 flow");
                 await paymentService.saveStripeCallingTransaction(paymentIntent, req.app.get("io"));
-            }else{
+            } else {
                 console.log("Processing via v1 fallback flow");
                 await paymentService.saveLegacyStripeTransaction(paymentIntent);
             }
@@ -494,9 +514,9 @@ exports.handleStripeWebhook = async (req, res) => {
 // Create PayPal Order (already done)
 exports.createPayPalOrder = async (req, res) => {
     // try {
-        const { amount, currency, userId, productType, paymentType , planName, planId , device_id } = req.body;
+    const { amount, currency, userId, productType, paymentType, planName, planId, device_id } = req.body;
 
-        console.log(req.body , "req body for paypal ")
+    console.log(req.body, "req body for paypal ")
 
     const ip =
         req.headers["x-forwarded-for"]?.split(",")[0]?.trim() ||
@@ -506,15 +526,15 @@ exports.createPayPalOrder = async (req, res) => {
 
     console.log("Client IP:", ip);
 
-        const order = await paymentService.createPayPalOrder({
-            amount,
-            currency,
-            userId,
-            productType,
-            paymentType,
-            planName,
-            planId , device_id,ip
-        });
+    const order = await paymentService.createPayPalOrder({
+        amount,
+        currency,
+        userId,
+        productType,
+        paymentType,
+        planName,
+        planId, device_id, ip
+    });
 
     // await eventsAPI.paymentIntentCreated({
     //     provider: "paypal",
@@ -529,7 +549,7 @@ exports.createPayPalOrder = async (req, res) => {
     // });
 
 
-        return res.json(order );
+    return res.json(order);
     // } catch (err) {
     //     logger.error("PayPal order creation failed", { error: err.message });
     //     res.status(500).json({ error: err.message });
@@ -539,19 +559,19 @@ exports.createPayPalOrder = async (req, res) => {
 // Capture PayPal Order
 exports.capturePayPalOrder = async (req, res) => {
     // try {
-        const orderId = req.body.orderId;
+    const orderId = req.body.orderId;
 
-        const io = req.app.get("io");
+    const io = req.app.get("io");
 
-        console.log(orderId , "order id" , req.body);
+    console.log(orderId, "order id", req.body);
 
     console.log("check for paypal")
-        const result = await paymentService.capturePayPalOrder(orderId);
-        console.log("result", result);
+    const result = await paymentService.capturePayPalOrder(orderId);
+    console.log("result", result);
 
-        const capture = result.purchase_units[0].payments.captures[0];
-        const transactionId = capture.id;
-        // const amount = parseFloat(capture.amount.value);
+    const capture = result.purchase_units[0].payments.captures[0];
+    const transactionId = capture.id;
+    // const amount = parseFloat(capture.amount.value);
 
     res.json({
         success: true,
@@ -736,13 +756,13 @@ exports.verifyRecentTransaction = async (req, res) => {
 //     }
 // };
 exports.getStripePaymentIntent = async (req, res) => {
-    const resp = await paymentService.paymentService(req , res);
+    const resp = await paymentService.paymentService(req, res);
 
-        return res.status(200).json({
-            success: true,
-            message: "Affiliate confirmation executed for latest Stripe transaction.",
+    return res.status(200).json({
+        success: true,
+        message: "Affiliate confirmation executed for latest Stripe transaction.",
 
-        });
+    });
     // } catch (error) {
     //     console.error("❌ Error during Stripe payment confirmation:", error.message);
     //     return res.status(500).json({

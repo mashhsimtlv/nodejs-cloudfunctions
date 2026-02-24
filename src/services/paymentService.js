@@ -13,7 +13,7 @@ const iccidService = require("../services/iccidService");
 const subscriberService = require("../services/subscriberService");
 const { getMainToken, getToken } = require("../helpers/generalSettings");
 const { models } = require("../models"); // Sequelize models
-const { sequelize, Transaction, CallNumber, UserCallerNumber, User } = require("../models");
+const { sequelize, Transaction, UnpaidUser, CallNumber, UserCallerNumber, User } = require("../models");
 // const User = models.User || models.user; // optional MySQL/Mongo user model
 const ExcelJS = require("exceljs");
 
@@ -103,6 +103,7 @@ class PaymentService {
             },
         });
     }
+
     async createStripeCallingPaymentIntent({
         amount,
         userId,
@@ -118,7 +119,7 @@ class PaymentService {
     }) {
         console.log("Here is the device id ", device_id);
 
-        // ✅ Use your fetch user method
+        // ✅ Use your fetch user method 
         //const user = await this.fetchUser(userId);
         const userRef = db.collection("app-registered-users").doc(userId);
         const userSnap = await userRef.get();
@@ -229,6 +230,28 @@ class PaymentService {
         setTimeout(() => {
             io.emit(event, data);
         }, delay);
+    }
+
+    async storeUnpaidTransaction({ userId, transactionId, user }) {
+        if (!userId || !transactionId) return;
+
+        const name =
+            user?.fullName ||
+            [user?.firstName, user?.lastName].filter(Boolean).join(" ") ||
+            "Unknown";
+
+        const email = user?.email || "unknown@example.com";
+
+        await UnpaidUser.findOrCreate({
+            where: { transaction_id: transactionId },
+            defaults: {
+                name,
+                email,
+                user_id: String(userId),
+                transaction_id: transactionId,
+                status: "unpaid",
+            },
+        });
     }
 
     /**
@@ -1201,605 +1224,779 @@ class PaymentService {
     }
 
 
-/**
- * Convert USD to EUR
- */
-usdToEur(usd) {
-    return +(usd / 1.1).toFixed(2);
-}
+    /**
+     * Convert USD to EUR
+     */
+    usdToEur(usd) {
+        return +(usd / 1.1).toFixed(2);
+    }
 
     async addHistory(userId, historyData) {
-    await db.collection("app-registered-users").doc(userId).update({
-        history: admin.firestore.FieldValue.arrayUnion(historyData),
-    });
-}
+        await db.collection("app-registered-users").doc(userId).update({
+            history: admin.firestore.FieldValue.arrayUnion(historyData),
+        });
+    }
 
     async addSimtlvBalance(iccid, user, euroAmount, io, simtlvToken, status) {
 
-    const subscriberResult = await iccidService.getSingleSubscriber({
-        iccid: iccid,
-        userData: user
-    })
+        const subscriberResult = await iccidService.getSingleSubscriber({
+            iccid: iccid,
+            userData: user
+        })
 
 
-    const subscriberID = subscriberResult.getSingleSubscriber.sim.subscriberId;
+        const subscriberID = subscriberResult.getSingleSubscriber.sim.subscriberId;
 
 
-    const requestData = {
-        modifySubscriberBalance: {
-            subscriber: { subscriberId: subscriberID },
-            amount: euroAmount,
-            description: "Optional description"
-        }
-    };
-
-
-    const url = `https://ocs-api.telco-vision.com:7443/ocs-custo/main/v1?token=${subscriberResult.simtlvToken}`;
-    const response = await axios.post(url, requestData, {
-        headers: { "Content-Type": "application/json" }
-    });
-
-
-    const emitPayload = {
-        status: {
-            code: 200,
-            msg: "Success",
-            status: status
-        },
-        getSingleSubscriber: {
-            subscriberId: subscriberResult.getSingleSubscriber.subscriberId,
-            balance: subscriberResult.getSingleSubscriber.balance,
-            lastMcc: subscriberResult.getSingleSubscriber.lastMcc,
-            sim: {
-                id: subscriberResult.getSingleSubscriber.sim.id,
-                subscriberId: subscriberResult.getSingleSubscriber.sim.subscriberId,
-                smdpServer: subscriberResult.getSingleSubscriber.sim.smdpServer,
-                activationCode: subscriberResult.getSingleSubscriber.sim.activationCode
+        const requestData = {
+            modifySubscriberBalance: {
+                subscriber: { subscriberId: subscriberID },
+                amount: euroAmount,
+                description: "Optional description"
             }
-        }
-    };
-
-    this.delayedEmit(io, "payment_event_" + user.uid, {
-        provider: "stripe",
-        type: "payment_intent.succeeded",
-        iccid: iccid,
-        data: emitPayload
-    });
+        };
 
 
-    // io.emit("payment_event_" + user.uid, {
-    //     provider: "stripe",
-    //     type: "payment_intent.succeeded",
-    //     iccid: iccid,
-    //     data: emitPayload
-    // });
+        const url = `https://ocs-api.telco-vision.com:7443/ocs-custo/main/v1?token=${subscriberResult.simtlvToken}`;
+        const response = await axios.post(url, requestData, {
+            headers: { "Content-Type": "application/json" }
+        });
 
 
-    return response.data;
+        const emitPayload = {
+            status: {
+                code: 200,
+                msg: "Success",
+                status: status
+            },
+            getSingleSubscriber: {
+                subscriberId: subscriberResult.getSingleSubscriber.subscriberId,
+                balance: subscriberResult.getSingleSubscriber.balance,
+                lastMcc: subscriberResult.getSingleSubscriber.lastMcc,
+                sim: {
+                    id: subscriberResult.getSingleSubscriber.sim.id,
+                    subscriberId: subscriberResult.getSingleSubscriber.sim.subscriberId,
+                    smdpServer: subscriberResult.getSingleSubscriber.sim.smdpServer,
+                    activationCode: subscriberResult.getSingleSubscriber.sim.activationCode
+                }
+            }
+        };
 
-}
+        this.delayedEmit(io, "payment_event_" + user.uid, {
+            provider: "stripe",
+            type: "payment_intent.succeeded",
+            iccid: iccid,
+            data: emitPayload
+        });
+
+
+        // io.emit("payment_event_" + user.uid, {
+        //     provider: "stripe",
+        //     type: "payment_intent.succeeded",
+        //     iccid: iccid,
+        //     data: emitPayload
+        // });
+
+
+        return response.data;
+
+    }
 
     async updateMilesAndTier(userId, milesToAdd) {
-    const intMilesToAdd = parseInt(milesToAdd, 10);
-    const userRef = db.collection("app-registered-users").doc(userId);
-    await db.runTransaction(async (t) => {
-        const snap = await t.get(userRef);
-        const data = snap.data();
-        const newMiles = (data?.miles || 0) + intMilesToAdd;
+        const intMilesToAdd = parseInt(milesToAdd, 10);
+        const userRef = db.collection("app-registered-users").doc(userId);
+        await db.runTransaction(async (t) => {
+            const snap = await t.get(userRef);
+            const data = snap.data();
+            const newMiles = (data?.miles || 0) + intMilesToAdd;
 
-        let tier = "silver";
-        if (newMiles >= 5000) tier = "gold";
-        if (newMiles >= 15000) tier = "diamond";
-        if (newMiles >= 30000) tier = "vip";
+            let tier = "silver";
+            if (newMiles >= 5000) tier = "gold";
+            if (newMiles >= 15000) tier = "diamond";
+            if (newMiles >= 30000) tier = "vip";
 
-        t.update(userRef, { miles: newMiles, tier });
-    });
-}
+            t.update(userRef, { miles: newMiles, tier });
+        });
+    }
 
     async sendNotification(fcmToken, title, body) {
-    if (!fcmToken) return;
-    await admin.messaging().send({
-        token: fcmToken,
-        notification: { title, body },
-    });
-}
+        if (!fcmToken) return;
+        await admin.messaging().send({
+            token: fcmToken,
+            notification: { title, body },
+        });
+    }
 
     /**
      * Notify admin by email if webhook fails
      */
     async notifyAdminEmail(subject, errorMessage) {
-    try {
-        const transporter = nodemailer.createTransport({
-            service: "gmail",
-            port: 587,
-            secure: false,
-            auth: {
-                user: process.env.SMTP_USER || "your-email@gmail.com",
-                pass: process.env.SMTP_PASS || "your-app-password", // app password for Gmail
-            },
-            tls: { rejectUnauthorized: false }
-        });
+        try {
+            const transporter = nodemailer.createTransport({
+                service: "gmail",
+                port: 587,
+                secure: false,
+                auth: {
+                    user: process.env.SMTP_USER || "your-email@gmail.com",
+                    pass: process.env.SMTP_PASS || "your-app-password", // app password for Gmail
+                },
+                tls: { rejectUnauthorized: false }
+            });
 
-        const mailOptions = {
-            from: '"SIMTLV System" <no-reply@simtlv.com>',
-            to: "massh@simtlv.co.il",
-            cc: ["dor@simtlv.co.il", "rana@simtlv.co.il"],
-            subject,
-            html: `
+            const mailOptions = {
+                from: '"SIMTLV System" <no-reply@simtlv.com>',
+                to: "massh@simtlv.co.il",
+                cc: ["dor@simtlv.co.il", "rana@simtlv.co.il"],
+                subject,
+                html: `
       <h2>⚠️ Stripe Webhook Processing Failed</h2>
       <p><b>Error:</b> ${errorMessage}</p>
       <p>Timestamp: ${new Date().toISOString()}</p>
     `,
-        };
+            };
 
 
-        await transporter.sendMail(mailOptions);
-        // logger.info("Admin notified via email about webhook failure");
-    } catch (mailErr) {
-        // logger.error("Failed to send admin notification email", { error: mailErr.message });
+            await transporter.sendMail(mailOptions);
+            // logger.info("Admin notified via email about webhook failure");
+        } catch (mailErr) {
+            // logger.error("Failed to send admin notification email", { error: mailErr.message });
+        }
     }
-}
 
     async createPayPalOrder({
-    amount,
-    currency,
-    userId,
-    productType,
-    paymentType,
-    planName,
-    planId,
-    device_id,
-    ip,
-    paymentFor,
-    startDate,
-    endDate,
-    paypalBaseUrl,
-    paypalClientId,
-    paypalSecret,
-}) {
-    const baseUrl = paypalBaseUrl || process.env.PAYPAL_URL;
-    const accessToken = await getPayPalAccessToken({
-        baseUrl,
-        clientId: paypalClientId,
-        secret: paypalSecret,
-    });
-
-    const flowVersion = paymentFor === "calling" ? "v3" : "v2";
-
-    // ✅ Store metadata inside `custom_id` (same as your Cloud Function)
-    const customId = JSON.stringify({
+        amount,
+        currency,
         userId,
         productType,
         paymentType,
         planName,
         planId,
-        flowVersion,
         device_id,
         ip,
         paymentFor,
         startDate,
         endDate,
-    });
+        paypalBaseUrl,
+        paypalClientId,
+        paypalSecret,
+    }) {
+        const baseUrl = paypalBaseUrl || process.env.PAYPAL_URL;
+        const accessToken = await getPayPalAccessToken({
+            baseUrl,
+            clientId: paypalClientId,
+            secret: paypalSecret,
+        });
 
-    const response = await axios.post(
-        `${baseUrl}/v2/checkout/orders`,
-        {
-            intent: "CAPTURE",
-            purchase_units: [
-                {
-                    amount: {
-                        currency_code: currency || "USD",
-                        value: amount?.toString() || "10.00"
+        const flowVersion = paymentFor === "calling" ? "v3" : "v2";
+
+        // ✅ Store metadata inside `custom_id` (same as your Cloud Function)
+        const customId = JSON.stringify({
+            userId,
+            productType,
+            paymentType,
+            planName,
+            planId,
+            flowVersion,
+            device_id,
+            ip,
+            paymentFor,
+            startDate,
+            endDate,
+        });
+
+        const response = await axios.post(
+            `${baseUrl}/v2/checkout/orders`,
+            {
+                intent: "CAPTURE",
+                purchase_units: [
+                    {
+                        amount: {
+                            currency_code: currency || "USD",
+                            value: amount?.toString() || "10.00"
+                        },
+                        custom_id: customId,
                     },
-                    custom_id: customId,
+                ],
+                application_context: {
+                    return_url: "https://simtlv-esim.web.app/payment-success.html",
+                    cancel_url: "https://simtlv-esim.web.app/payment-cancel.html",
                 },
-            ],
-            application_context: {
-                return_url: "https://simtlv-esim.web.app/payment-success.html",
-                cancel_url: "https://simtlv-esim.web.app/payment-cancel.html",
             },
-        },
-        {
-            headers: {
-                Authorization: `Bearer ${accessToken}`,
-                "Content-Type": "application/json"
+            {
+                headers: {
+                    Authorization: `Bearer ${accessToken}`,
+                    "Content-Type": "application/json"
+                }
             }
-        }
-    );
+        );
 
-    const order = response.data;
+        const order = response.data;
 
-    console.log("First link:", order.links[0]);
+        console.log("First link:", order.links[0]);
 
-    const approvalCandidates = Array.isArray(order.links)
-        ? order.links.filter((link) => link.rel === "approve")
-        : [];
+        const approvalCandidates = Array.isArray(order.links)
+            ? order.links.filter((link) => link.rel === "approve")
+            : [];
 
-    const approvalUrl = approvalCandidates.length > 0 ? approvalCandidates[0].href : null;
-    console.log("Approval URL:", approvalUrl);
+        const approvalUrl = approvalCandidates.length > 0 ? approvalCandidates[0].href : null;
+        console.log("Approval URL:", approvalUrl);
 
-    return {
-        success: true,
-        orderId: order.id,
-        approvalUrl,
-    };
-}
+        return {
+            success: true,
+            orderId: order.id,
+            approvalUrl,
+        };
+    }
 
     // Capture PayPal Order
     async capturePayPalOrder(orderId) {
-    const accessToken = await getPayPalAccessToken();
-    console.log(accessToken, "access token", orderId)
+        const accessToken = await getPayPalAccessToken();
+        console.log(accessToken, "access token", orderId)
 
-    const response = await axios.post(
-        `${process.env.PAYPAL_URL}/v2/checkout/orders/${orderId}/capture`,
-        {},
-        { headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" } }
-    );
+        const response = await axios.post(
+            `${process.env.PAYPAL_URL}/v2/checkout/orders/${orderId}/capture`,
+            {},
+            { headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" } }
+        );
 
-    return response.data;
-}
+        return response.data;
+    }
 
     async savePayPalCallingTransaction(data, io) {
-    try {
-        console.log("===== PayPal calling transaction started =====");
-        const { transactionId, amount, metadata = {}, createdAt } = data;
-        const userId = metadata.userId;
-        const productType = metadata.productType || "unknown";
-        const paymentType = metadata.paymentType || "unknown";
+        try {
+            console.log("===== PayPal calling transaction started =====");
+            const { transactionId, amount, metadata = {}, createdAt } = data;
+            const userId = metadata.userId;
+            const productType = metadata.productType || "unknown";
+            const paymentType = metadata.paymentType || "unknown";
 
-        if (!userId) {
-            console.log("Missing userId for PayPal calling transaction", { transactionId });
-            return;
-        }
+            if (!userId) {
+                console.log("Missing userId for PayPal calling transaction", { transactionId });
+                return;
+            }
 
-        const [, createdRow] = await Transaction.findOrCreate({
-            where: { transaction_id: transactionId },
-            defaults: {
-                user_id: userId,
-                transaction_id: transactionId,
-                amount,
+            const [, createdRow] = await Transaction.findOrCreate({
+                where: { transaction_id: transactionId },
+                defaults: {
+                    user_id: userId,
+                    transaction_id: transactionId,
+                    amount,
+                    provider: "paypal",
+                    product_type: productType,
+                    payment_type: paymentType,
+                    createdAt: createdAt ? new Date(createdAt) : new Date(),
+                },
+            });
+
+            if (!createdRow) {
+                console.log("Duplicate PayPal calling transaction ignored:", transactionId);
+                return;
+            }
+
+            const startTime = metadata.startDate
+                ? new Date(metadata.startDate)
+                : createdAt
+                    ? new Date(createdAt)
+                    : new Date();
+            const endTime = metadata.endDate ? new Date(metadata.endDate) : null;
+
+            const assigned = await this.assignCallingNumber({
+                userId,
+                startTime,
+                endTime,
+                amount: amount,
+            });
+
+            // Balance is already updated in assignCallingNumber if existing assignment
+            // Only update if it's a new assignment (though it's already set in create)
+            if (!assigned.isExisting) {
+                await assigned.mapping.update({ current_balance: amount });
+            }
+
+            const emitPayload = {
+                number: assigned.number.number,
+                password: assigned.number.password,
+            };
+
+            this.delayedEmit(io, "payment_event_" + userId, {
                 provider: "paypal",
-                product_type: productType,
-                payment_type: paymentType,
-                createdAt: createdAt ? new Date(createdAt) : new Date(),
-            },
-        });
-
-        if (!createdRow) {
-            console.log("Duplicate PayPal calling transaction ignored:", transactionId);
-            return;
+                type: "sip_number_assigned",
+                data: emitPayload,
+            });
+        } catch (err) {
+            console.log("❌ savePayPalCallingTransaction error", { error: err.message });
+            await this.notifyAdminEmail("PayPal Calling Webhook Failure", err.message);
         }
-
-        const startTime = metadata.startDate
-            ? new Date(metadata.startDate)
-            : createdAt
-                ? new Date(createdAt)
-                : new Date();
-        const endTime = metadata.endDate ? new Date(metadata.endDate) : null;
-
-        const assigned = await this.assignCallingNumber({
-            userId,
-            startTime,
-            endTime,
-            amount: amount,
-        });
-
-        // Balance is already updated in assignCallingNumber if existing assignment
-        // Only update if it's a new assignment (though it's already set in create)
-        if (!assigned.isExisting) {
-            await assigned.mapping.update({ current_balance: amount });
-        }
-
-        const emitPayload = {
-            number: assigned.number.number,
-            password: assigned.number.password,
-        };
-
-        this.delayedEmit(io, "payment_event_" + userId, {
-            provider: "paypal",
-            type: "sip_number_assigned",
-            data: emitPayload,
-        });
-    } catch (err) {
-        console.log("❌ savePayPalCallingTransaction error", { error: err.message });
-        await this.notifyAdminEmail("PayPal Calling Webhook Failure", err.message);
     }
-}
 
     // Save PayPal Transaction (similar to Stripe)
     async savePayPalTransaction(data, io) {
-    try {
-        console.log("===== PayPal transaction started =====");
+        try {
+            console.log("===== PayPal transaction started =====");
 
-        // ------------------- STEP 1: Extract Data & Metadata -------------------
-        const { transactionId, amount, currency, status, orderId, metadata } = data;
+            // ------------------- STEP 1: Extract Data & Metadata -------------------
+            const { transactionId, amount, currency, status, orderId, metadata } = data;
 
-        console.log("meta data", metadata)
+            console.log("meta data", metadata)
 
-        const userId = metadata?.userId;
-        const device_id = metadata?.deviceId || null;
-        const ip = metadata?.ip || null;
-        const paymentType = metadata?.paymentType || "paypal";
-        const productType = metadata?.productType || "unknown";
-        const planCode = metadata?.planName || null; // ✅ for GigaBoost
+            const userId = metadata?.userId;
+            const device_id = metadata?.deviceId || null;
+            const ip = metadata?.ip || null;
+            const paymentType = metadata?.paymentType || "paypal";
+            const productType = metadata?.productType || "unknown";
+            const planCode = metadata?.planName || null; // ✅ for GigaBoost
 
-        console.log("Step 1 → Extracted PayPal data:", {
-            userId,
-            amount,
-            currency,
-            paymentType,
-            productType,
-            planCode,
-        });
+            console.log("Step 1 → Extracted PayPal data:", {
+                userId,
+                amount,
+                currency,
+                paymentType,
+                productType,
+                planCode,
+            });
 
-        const [result, createdRow] = await Transaction.findOrCreate({
-            where: { transaction_id: transactionId },
-            defaults: {
-                user_id: userId,
-                transaction_id: transactionId,
-                amount: amount,
-                provider: "payapl",
-                product_type: productType,
-                payment_type: paymentType
-            },
-        });
+            const [result, createdRow] = await Transaction.findOrCreate({
+                where: { transaction_id: transactionId },
+                defaults: {
+                    user_id: userId,
+                    transaction_id: transactionId,
+                    amount: amount,
+                    provider: "payapl",
+                    product_type: productType,
+                    payment_type: paymentType
+                },
+            });
 
-        if (!createdRow) {
-            console.log("Duplicate transaction ignored:", id);
-            return;
-        }
-
-        // ------------------- STEP 2: Prevent Duplicate -------------------
-        const txRef = db.collection("transactions").where("transactionId", "==", transactionId).limit(1);
-        const txSnap = await txRef.get();
-        if (!txSnap.empty) {
-            console.log("❌ Duplicate PayPal transaction ignored", { transactionId, userId });
-            return;
-        }
-        console.log("Step 2 → Transaction is not duplicate");
-
-        // ------------------- STEP 3: Fetch User -------------------
-        const userRef = db.collection("app-registered-users").doc(userId);
-        const userSnap = await userRef.get();
-        if (!userSnap.exists) {
-            console.log("❌ PayPal webhook: user not found", { userId });
-            return;
-        }
-        const user = userSnap.data();
-        const referredBy = user.referredBy || null;
-        console.log("Step 3 → User fetched successfully:", { userId, referredBy, tier: user.tier });
-
-        const previousTxSnap = await db
-            .collection("transactions")
-            .where("userId", "==", userId)
-            .limit(1)
-            .get();
-
-        const isFirstPayment = previousTxSnap.empty;
-        console.log("🧾 First payment check:", { isFirstPayment });
-        if (isFirstPayment) {
-
-            if (device_id || ip) {
-
-                try {
-                    await axios.post(
-                        "https://app-link.simtlv.co.il/api/affiliates/get-payment-confirmation",
-                        { device_id, amount, ip, email: user?.email, user_id: userId, id: transactionId },
-                        { headers: { "Content-Type": "application/json" } }
-                    );
-                    console.log("Affiliate payment confirmation triggered:", device_id);
-                } catch (err) {
-                    console.error("Affiliate confirmation error:", err.message);
-                }
+            if (!createdRow) {
+                console.log("Duplicate transaction ignored:", id);
+                return;
             }
 
-            const gigaplanCouponSnap = await db
-                .collection("gigaplan_coupons")
+            // ------------------- STEP 2: Prevent Duplicate -------------------
+            const txRef = db.collection("transactions").where("transactionId", "==", transactionId).limit(1);
+            const txSnap = await txRef.get();
+            if (!txSnap.empty) {
+                console.log("❌ Duplicate PayPal transaction ignored", { transactionId, userId });
+                return;
+            }
+            console.log("Step 2 → Transaction is not duplicate");
+
+            // ------------------- STEP 3: Fetch User -------------------
+            const userRef = db.collection("app-registered-users").doc(userId);
+            const userSnap = await userRef.get();
+            if (!userSnap.exists) {
+                console.log("❌ PayPal webhook: user not found", { userId });
+                return;
+            }
+            const user = userSnap.data();
+            const referredBy = user.referredBy || null;
+            console.log("Step 3 → User fetched successfully:", { userId, referredBy, tier: user.tier });
+
+            const previousTxSnap = await db
+                .collection("transactions")
                 .where("userId", "==", userId)
                 .limit(1)
                 .get();
 
-            if (!gigaplanCouponSnap.empty) {
-                const gigaplanCouponDoc = gigaplanCouponSnap.docs[0];
-                const gigaplanData = gigaplanCouponDoc.data();
-                console.log("🎟️ Gigaplan coupon found for PayPal:", gigaplanData);
+            const isFirstPayment = previousTxSnap.empty;
+            console.log("🧾 First payment check:", { isFirstPayment });
+            if (isFirstPayment) {
 
-                try {
-                    // ✅ Match coupon value with PayPal payment amount
-                    const couponValue = parseFloat(gigaplanData.value);
-                    const paidAmount = parseFloat(amount);
-                    const diff = Math.abs(paidAmount - couponValue);
+                if (device_id || ip) {
 
-                    if (paidAmount < 45) {
-                        console.log(`⚠️ Skipping Gigaplan coupon: amount mismatch → paid=${paidAmount}, coupon=${couponValue}`);
-                    } else {
-                        // Fetch GigaBoost plan by couponCode or type
-                        const planSnap = await db
-                            .collection("gigaBoostPlans")
-                            .where("plan_name", "==", "GigaBoost 7GB 30Days Zone 1") // 🔧 Replace with dynamic if needed
-                            .limit(1)
-                            .get();
+                    try {
+                        await axios.post(
+                            "https://app-link.simtlv.co.il/api/affiliates/get-payment-confirmation",
+                            { device_id, amount, ip, email: user?.email, user_id: userId, id: transactionId },
+                            { headers: { "Content-Type": "application/json" } }
+                        );
+                        console.log("Affiliate payment confirmation triggered:", device_id);
+                    } catch (err) {
+                        console.error("Affiliate confirmation error:", err.message);
+                    }
+                }
 
-                        if (planSnap.empty) {
-                            console.log("❌ Gigaplan plan not found for coupon:", gigaplanData.couponCode);
-                            await this.notifyAdminEmail("Gigaplan Coupon Failure", `Plan not found for coupon: ${gigaplanData.couponCode}`);
+                const gigaplanCouponSnap = await db
+                    .collection("gigaplan_coupons")
+                    .where("userId", "==", userId)
+                    .limit(1)
+                    .get();
+
+                if (!gigaplanCouponSnap.empty) {
+                    const gigaplanCouponDoc = gigaplanCouponSnap.docs[0];
+                    const gigaplanData = gigaplanCouponDoc.data();
+                    console.log("🎟️ Gigaplan coupon found for PayPal:", gigaplanData);
+
+                    try {
+                        // ✅ Match coupon value with PayPal payment amount
+                        const couponValue = parseFloat(gigaplanData.value);
+                        const paidAmount = parseFloat(amount);
+                        const diff = Math.abs(paidAmount - couponValue);
+
+                        if (paidAmount < 45) {
+                            console.log(`⚠️ Skipping Gigaplan coupon: amount mismatch → paid=${paidAmount}, coupon=${couponValue}`);
                         } else {
-                            const plan = planSnap.docs[0].data();
-                            const iccid = user.iccid;
+                            // Fetch GigaBoost plan by couponCode or type
+                            const planSnap = await db
+                                .collection("gigaBoostPlans")
+                                .where("plan_name", "==", "GigaBoost 7GB 30Days Zone 1") // 🔧 Replace with dynamic if needed
+                                .limit(1)
+                                .get();
 
-                            console.log("✅ Applying Gigaplan package via PayPal:", { iccid });
+                            if (planSnap.empty) {
+                                console.log("❌ Gigaplan plan not found for coupon:", gigaplanData.couponCode);
+                                await this.notifyAdminEmail("Gigaplan Coupon Failure", `Plan not found for coupon: ${gigaplanData.couponCode}`);
+                            } else {
+                                const plan = planSnap.docs[0].data();
+                                const iccid = user.iccid;
 
-                            await this.affectPackage(iccid, plan, user, {
-                                id: "gigaplan-coupon-" + gigaplanData.couponCode,
-                                metadata: { productType: "Gigaplan", paymentType: "coupon" },
-                            });
+                                console.log("✅ Applying Gigaplan package via PayPal:", { iccid });
 
-                            await this.addHistory(userId, {
-                                amount: gigaplanData.value,
-                                bonus: 0,
-                                currentBonus: null,
-                                dateTime: new Date().toISOString(),
-                                isPayAsyouGo: true,
-                                isTopup: false,
-                                paymentType: "coupon",
-                                planName: gigaplanData.couponCode,
-                                referredBy: "",
-                                type: "Gigaplan Coupon Applied",
-                            });
+                                await this.affectPackage(iccid, plan, user, {
+                                    id: "gigaplan-coupon-" + gigaplanData.couponCode,
+                                    metadata: { productType: "Gigaplan", paymentType: "coupon" },
+                                });
 
-                            // Delete the coupon after applying
-                            await db.collection("gigaplan_coupons").doc(gigaplanCouponDoc.id).delete();
-                            console.log("🗑️ Gigaplan coupon removed after use");
+                                await this.addHistory(userId, {
+                                    amount: gigaplanData.value,
+                                    bonus: 0,
+                                    currentBonus: null,
+                                    dateTime: new Date().toISOString(),
+                                    isPayAsyouGo: true,
+                                    isTopup: false,
+                                    paymentType: "coupon",
+                                    planName: gigaplanData.couponCode,
+                                    referredBy: "",
+                                    type: "Gigaplan Coupon Applied",
+                                });
+
+                                // Delete the coupon after applying
+                                await db.collection("gigaplan_coupons").doc(gigaplanCouponDoc.id).delete();
+                                console.log("🗑️ Gigaplan coupon removed after use");
+                            }
                         }
+                    } catch (err) {
+                        console.log("❌ Error applying Gigaplan coupon via PayPal", { error: err.message });
+                        await this.notifyAdminEmail("Gigaplan Coupon Error (PayPal)", err.message);
                     }
+                }
+            }
+
+            let usdAmount = amount;
+            let baseAmount = amount;
+            let bonusBalance = 0;
+
+            // ------------------- SPECIAL CASE: GigaBoost -------------------
+            if (productType === "GigaBoost" && planCode) {
+                console.log("Step 4 → Processing GigaBoost PayPal payment");
+
+                let iccid = user.iccid; // from app-registered-users
+                let iccidGiga = user.iccid;
+                console.log("Looking up GigaBoost plan:", planCode);
+
+                let simtlvGigaToken = user.existingUser ? await getMainToken() : await getToken();
+                console.log(simtlvGigaToken, "token before active ICCID");
+
+                let emitPayload = null;
+
+                // ------------------- Activate ICCID if not active -------------------
+                if (user.isActive === false) {
+                    console.log("SIM is not active → activating in GigaBoost PayPal flow");
+                    simtlvGigaToken = await getMainToken();
+
+                    const iccidResultGiga = await iccidService.activeIccid({
+                        uid: userId,
+                        amount: usdAmount,
+                        paymentType,
+                        transactionId,
+                        simtlvToken: simtlvGigaToken,
+                    });
+
+                    if (!iccidGiga) {
+                        iccidGiga = iccidResultGiga.iccid;
+                        console.log("ICCID activation result:", iccidGiga);
+                    }
+
+                    const subscriberResult = await iccidService.getSingleSubscriber({
+                        iccid: iccidResultGiga.iccid,
+                        userData: user
+                    });
+
+                    emitPayload = {
+                        status: { code: 200, msg: "Success", status },
+                        getSingleSubscriber: {
+                            subscriberId: subscriberResult.getSingleSubscriber.subscriberId,
+                            balance: subscriberResult.getSingleSubscriber.balance,
+                            lastMcc: subscriberResult.getSingleSubscriber.lastMcc,
+                            sim: {
+                                id: subscriberResult.getSingleSubscriber.sim.id,
+                                subscriberId: subscriberResult.getSingleSubscriber.sim.subscriberId,
+                                smdpServer: subscriberResult.getSingleSubscriber.sim.smdpServer,
+                                activationCode: subscriberResult.getSingleSubscriber.sim.activationCode
+                            }
+                        }
+                    };
+                }
+
+                // ------------------- Fetch Plan -------------------
+                const planSnap = await db
+                    .collection("gigaBoostPlans")
+                    .where("plan_name", "==", planCode)
+                    .limit(1)
+                    .get();
+
+                if (planSnap.empty) {
+                    console.log("❌ GigaBoost plan not found in Firestore:", planCode);
+                    await this.notifyAdminEmail("PayPal GigaBoost Failure", `Plan not found: ${planCode}`);
+                    return;
+                }
+
+                const plan = planSnap.docs[0].data();
+                console.log("Plan resolved:", { planCode, planName: plan.plan_name });
+
+                // ------------------- Apply Package -------------------
+                try {
+                    await this.affectPackage(iccidGiga, plan, user, data);
+                    console.log("✅ GigaBoost package applied successfully");
+
+                    await this.addHistory(userId, {
+                        amount: usdAmount,
+                        bonus: 0,
+                        currentBonus: null,
+                        dateTime: new Date().toISOString(),
+                        isPayAsyouGo: true,
+                        isTopup: false,
+                        paymentType,
+                        planName: plan.plan_name,
+                        referredBy: "",
+                        type: "GigaBoost Purchase",
+                    });
+
+                    await db.collection("transactions").add({
+                        userId,
+                        amount: baseAmount,
+                        transactionId,
+                        transactionTime: new Date(),
+                        isUsed: true,
+                        provider: "paypal",
+                        productType: planCode,
+                        paymentType,
+                        status,
+                        orderId,
+                    });
+                    await Transaction.update(
+                        { amount: usdAmount, product_type: productType, payment_type: paymentType },
+                        { where: { transaction_id: transactionId } }
+                    );
+                    console.log("Transaction recorded for GigaBoost PayPal:", { userId, transactionId });
                 } catch (err) {
-                    console.log("❌ Error applying Gigaplan coupon via PayPal", { error: err.message });
-                    await this.notifyAdminEmail("Gigaplan Coupon Error (PayPal)", err.message);
-                }
-            }
-        }
-
-        let usdAmount = amount;
-        let baseAmount = amount;
-        let bonusBalance = 0;
-
-        // ------------------- SPECIAL CASE: GigaBoost -------------------
-        if (productType === "GigaBoost" && planCode) {
-            console.log("Step 4 → Processing GigaBoost PayPal payment");
-
-            let iccid = user.iccid; // from app-registered-users
-            let iccidGiga = user.iccid;
-            console.log("Looking up GigaBoost plan:", planCode);
-
-            let simtlvGigaToken = user.existingUser ? await getMainToken() : await getToken();
-            console.log(simtlvGigaToken, "token before active ICCID");
-
-            let emitPayload = null;
-
-            // ------------------- Activate ICCID if not active -------------------
-            if (user.isActive === false) {
-                console.log("SIM is not active → activating in GigaBoost PayPal flow");
-                simtlvGigaToken = await getMainToken();
-
-                const iccidResultGiga = await iccidService.activeIccid({
-                    uid: userId,
-                    amount: usdAmount,
-                    paymentType,
-                    transactionId,
-                    simtlvToken: simtlvGigaToken,
-                });
-
-                if (!iccidGiga) {
-                    iccidGiga = iccidResultGiga.iccid;
-                    console.log("ICCID activation result:", iccidGiga);
+                    console.log("❌ Error applying GigaBoost package", { error: err.message, userId });
+                    await this.notifyAdminEmail("PayPal GigaBoost Failure", err.message);
                 }
 
-                const subscriberResult = await iccidService.getSingleSubscriber({
-                    iccid: iccidResultGiga.iccid,
-                    userData: user
+                // ------------------- Default Emit Payload -------------------
+                if (!emitPayload) {
+                    emitPayload = {
+                        status: { code: 200, msg: "Success", status },
+                        getSingleSubscriber: {
+                            subscriberId: null,
+                            balance: null,
+                            lastMcc: null,
+                            sim: {
+                                id: null,
+                                subscriberId: null,
+                                smdpServer: null,
+                                activationCode: iccidGiga || "testiccid"
+                            }
+                        }
+                    };
+                }
+
+                this.delayedEmit(io, "payment_event_" + user.uid, {
+                    provider: "paypal",
+                    type: "paypal.order.succeeded",
+                    iccid: iccidGiga,
+                    data: emitPayload
                 });
 
-                emitPayload = {
-                    status: { code: 200, msg: "Success", status },
-                    getSingleSubscriber: {
-                        subscriberId: subscriberResult.getSingleSubscriber.subscriberId,
-                        balance: subscriberResult.getSingleSubscriber.balance,
-                        lastMcc: subscriberResult.getSingleSubscriber.lastMcc,
-                        sim: {
-                            id: subscriberResult.getSingleSubscriber.sim.id,
-                            subscriberId: subscriberResult.getSingleSubscriber.sim.subscriberId,
-                            smdpServer: subscriberResult.getSingleSubscriber.sim.smdpServer,
-                            activationCode: subscriberResult.getSingleSubscriber.sim.activationCode
+                // ------------------- Referral Bonus Logic -------------------
+                if (referredBy && !user.referralUsed) {
+                    console.log("Referral detected → applying bonus for", { referredBy, userId });
+
+                    const referrerSnap = await db
+                        .collection("app-registered-users")
+                        .where("referralCode", "==", referredBy)
+                        .limit(1)
+                        .get();
+
+                    if (!referrerSnap.empty) {
+                        const referrer = referrerSnap.docs[0];
+                        const referrerId = referrer.id;
+                        const refData = referrer.data();
+
+                        const refBonus =
+                            refData.tier === "VIP" ? 8 :
+                                refData.tier === "Diamond" ? 7 :
+                                    refData.tier === "Gold" ? 6 : 5;
+                        const milesAmount = refData.tier === "VIP"
+                            ? 800
+                            : refData.tier === "Diamond"
+                                ? 700
+                                : refData.tier === "Gold"
+                                    ? 600
+                                    : 500;
+                        await db.collection("app-registered-users").doc(referrerId).update({
+                            balance: admin.firestore.FieldValue.increment(refBonus),
+                            miles: admin.firestore.FieldValue.increment(milesAmount),
+                            "referralStats.pendingCount": (refData.referralStats?.pendingCount || 1) - 1,
+                        });
+
+                        await this.addHistory(referrerId, {
+                            amount: refBonus,
+                            bonus: 0,
+                            currentBonus: null,
+                            dateTime: new Date().toISOString(),
+                            isPayAsyouGo: true,
+                            isTopup: true,
+                            paymentType,
+                            planName: null,
+                            referredBy: "",
+                            type: "Referral Bonus",
+                        });
+
+                        await userRef.update({
+                            balance: admin.firestore.FieldValue.increment(5),
+                            referralUsed: true,
+                        });
+
+                        await this.addHistory(userId, {
+                            amount: 5,
+                            bonus: 0,
+                            currentBonus: null,
+                            dateTime: new Date().toISOString(),
+                            isPayAsyouGo: true,
+                            isTopup: true,
+                            paymentType,
+                            planName: null,
+                            referredBy: "",
+                            type: "Referral Reward",
+                        });
+
+                        if (refData.fcmToken) {
+                            await this.sendNotification(
+                                refData.fcmToken,
+                                "Referral Bonus!",
+                                "You earned bonus!"
+                            );
+                        }
+
+                        if (iccidGiga) {
+                            let euroAmount = this.usdToEur(5);
+                            let referrerIccid = refData.iccid;
+
+                            console.log("Adding balance to Referrer & Referee in SimTLV");
+                            await this.addSimtlvBalance(iccidGiga, user, euroAmount, io, simtlvGigaToken, "pending");
+                            let simtlvRefToken = refData.existingUser ? await getMainToken() : await getToken();
+                            await this.addSimtlvBalance(referrerIccid, refData, euroAmount, io, simtlvRefToken, "pending");
                         }
                     }
+                }
+
+                // ------------------- Webhook -------------------
+                const payload = {
+                    totalPaymentValue: data.amount,
+                    paymentMethod: "paypal",
+                    userUid: user.uid || "unknown",
+                    firstName: user.firstName || "",
+                    lastName: user.lastName || "",
+                    userEmail: user.email || "",
+                    transactionId: data.id,
+                    invoiceName: data.metadata.invoiceName || "",
+                    product: data.metadata.productType || "unknown",
+                    paymentType: data.metadata.paymentType || "paypal",
                 };
-            }
 
-            // ------------------- Fetch Plan -------------------
-            const planSnap = await db
-                .collection("gigaBoostPlans")
-                .where("plan_name", "==", planCode)
-                .limit(1)
-                .get();
+                console.log("Posting to n8n webhook:", payload);
 
-            if (planSnap.empty) {
-                console.log("❌ GigaBoost plan not found in Firestore:", planCode);
-                await this.notifyAdminEmail("PayPal GigaBoost Failure", `Plan not found: ${planCode}`);
+                await axios.post(
+                    "https://n8n-sys.simtlv.co.il/webhook/21731742-dd24-461c-8c42-9cfafb5064f7",
+                    payload,
+                    { headers: { "Content-Type": "application/json" } }
+                );
+
+                console.log("===== PayPal webhook ended (GigaBoost) =====");
                 return;
             }
 
-            const plan = planSnap.docs[0].data();
-            console.log("Plan resolved:", { planCode, planName: plan.plan_name });
+            // ------------------- STEP 4: Coupon Reset -------------------
+            if (user.couponValue && user.couponValue > 0 && user.couponType) {
+                console.log("Coupon detected → redeeming:", { type: user.couponType, value: user.couponValue });
 
-            // ------------------- Apply Package -------------------
-            try {
-                await this.affectPackage(iccidGiga, plan, user, data);
-                console.log("✅ GigaBoost package applied successfully");
+                if (user.couponType === "percentageDiscount") {
+                    const originalAmount = usdAmount / (1 - (user.couponValue / 100));
+                    usdAmount = originalAmount;
+                    console.log("Coupon reversed discount → new amount:", usdAmount);
+                }
+
+                await userRef.update({ couponValue: 0, couponType: null });
+                console.log("Coupon reset completed");
+            }
+
+            // ------------------- STEP 5: Next Topup Bonus -------------------
+            if (user.nextTopupBonus && user.nextTopupBonus.value) {
+                console.log("Next Topup Bonus detected → applying:", user.nextTopupBonus);
+
+                usdAmount += user.nextTopupBonus.value;
+                await userRef.update({ nextTopupBonus: admin.firestore.FieldValue.delete() });
 
                 await this.addHistory(userId, {
-                    amount: usdAmount,
+                    amount: user.nextTopupBonus.value,
                     bonus: 0,
                     currentBonus: null,
                     dateTime: new Date().toISOString(),
                     isPayAsyouGo: true,
-                    isTopup: false,
+                    isTopup: true,
                     paymentType,
-                    planName: plan.plan_name,
+                    planName: null,
                     referredBy: "",
-                    type: "GigaBoost Purchase",
+                    type: "Next Topup Bonus",
                 });
 
-                await db.collection("transactions").add({
-                    userId,
-                    amount: baseAmount,
-                    transactionId,
-                    transactionTime: new Date(),
-                    isUsed: true,
-                    provider: "paypal",
-                    productType: planCode,
+                console.log("Next Topup Bonus applied → new amount:", usdAmount);
+            }
+
+            // ------------------- STEP 6: Tier Bonus -------------------
+            const tierRates = { silver: 0.05, gold: 0.07, diamond: 0.08, vip: 0.1 };
+            const rate = tierRates[user.tier] || 0;
+            if (amount >= 20 && rate > 0) {
+                bonusBalance = amount * rate;
+                usdAmount += bonusBalance;
+                console.log("Tier bonus applied:", { tier: user.tier, bonusBalance, newAmount: usdAmount });
+            }
+
+            // ------------------- STEP 7: ICCID Activation -------------------
+            let simtlvToken = user.existingUser ? await getMainToken() : await getToken();
+            let iccid = null;
+
+            if (user.isActive === false) {
+                console.log("User inactive → activating ICCID");
+                const iccidResult = await iccidService.activeIccid({
+                    uid: userId,
+                    amount: usdAmount,
                     paymentType,
-                    status,
-                    orderId,
+                    transactionId,
+                    simtlvToken,
                 });
-                await Transaction.update(
-                    { amount: usdAmount, product_type: productType, payment_type: paymentType },
-                    { where: { transaction_id: transactionId } }
-                );
-                console.log("Transaction recorded for GigaBoost PayPal:", { userId, transactionId });
-            } catch (err) {
-                console.log("❌ Error applying GigaBoost package", { error: err.message, userId });
-                await this.notifyAdminEmail("PayPal GigaBoost Failure", err.message);
+                iccid = iccidResult.iccid;
+                console.log("ICCID activation result:", iccidResult);
             }
+            iccid = user.iccid || iccid;
+            console.log("Resolved ICCID:", iccid);
 
-            // ------------------- Default Emit Payload -------------------
-            if (!emitPayload) {
-                emitPayload = {
-                    status: { code: 200, msg: "Success", status },
-                    getSingleSubscriber: {
-                        subscriberId: null,
-                        balance: null,
-                        lastMcc: null,
-                        sim: {
-                            id: null,
-                            subscriberId: null,
-                            smdpServer: null,
-                            activationCode: iccidGiga || "testiccid"
-                        }
-                    }
-                };
-            }
-
-            this.delayedEmit(io, "payment_event_" + user.uid, {
-                provider: "paypal",
-                type: "paypal.order.succeeded",
-                iccid: iccidGiga,
-                data: emitPayload
-            });
-
-            // ------------------- Referral Bonus Logic -------------------
+            // ------------------- STEP 8: Referral Bonus -------------------
+            console.log("Checking referral status:", { referredBy, referralUsed: user.referralUsed });
             if (referredBy && !user.referralUsed) {
-                console.log("Referral detected → applying bonus for", { referredBy, userId });
-
+                console.log("Referral detected → applying for", { referredBy, userId });
                 const referrerSnap = await db
                     .collection("app-registered-users")
                     .where("referralCode", "==", referredBy)
@@ -1812,9 +2009,13 @@ usdToEur(usd) {
                     const refData = referrer.data();
 
                     const refBonus =
-                        refData.tier === "VIP" ? 8 :
-                            refData.tier === "Diamond" ? 7 :
-                                refData.tier === "Gold" ? 6 : 5;
+                        refData.tier === "VIP"
+                            ? 8
+                            : refData.tier === "Diamond"
+                                ? 7
+                                : refData.tier === "Gold"
+                                    ? 6
+                                    : 5;
                     const milesAmount = refData.tier === "VIP"
                         ? 800
                         : refData.tier === "Diamond"
@@ -1822,6 +2023,7 @@ usdToEur(usd) {
                             : refData.tier === "Gold"
                                 ? 600
                                 : 500;
+
                     await db.collection("app-registered-users").doc(referrerId).update({
                         balance: admin.firestore.FieldValue.increment(refBonus),
                         miles: admin.firestore.FieldValue.increment(milesAmount),
@@ -1830,34 +2032,37 @@ usdToEur(usd) {
 
                     await this.addHistory(referrerId, {
                         amount: refBonus,
-                        bonus: 0,
+                        bonus: null,
                         currentBonus: null,
                         dateTime: new Date().toISOString(),
                         isPayAsyouGo: true,
                         isTopup: true,
-                        paymentType,
+                        paymentType: paymentType,
                         planName: null,
                         referredBy: "",
                         type: "Referral Bonus",
                     });
+
 
                     await userRef.update({
                         balance: admin.firestore.FieldValue.increment(5),
                         referralUsed: true,
                     });
 
+
                     await this.addHistory(userId, {
                         amount: 5,
-                        bonus: 0,
+                        bonus: null,
                         currentBonus: null,
                         dateTime: new Date().toISOString(),
                         isPayAsyouGo: true,
                         isTopup: true,
-                        paymentType,
+                        paymentType: paymentType,
                         planName: null,
                         referredBy: "",
                         type: "Referral Reward",
                     });
+
 
                     if (refData.fcmToken) {
                         await this.sendNotification(
@@ -1866,23 +2071,87 @@ usdToEur(usd) {
                             "You earned bonus!"
                         );
                     }
-
-                    if (iccidGiga) {
-                        let euroAmount = this.usdToEur(5);
-                        let referrerIccid = refData.iccid;
-
-                        console.log("Adding balance to Referrer & Referee in SimTLV");
-                        await this.addSimtlvBalance(iccidGiga, user, euroAmount, io, simtlvGigaToken, "pending");
-                        let simtlvRefToken = refData.existingUser ? await getMainToken() : await getToken();
-                        await this.addSimtlvBalance(referrerIccid, refData, euroAmount, io, simtlvRefToken, "pending");
-                    }
                 }
             }
 
-            // ------------------- Webhook -------------------
+            // ------------------- STEP 9: Add SimTLV Balance -------------------
+            let euroAmount = this.usdToEur(usdAmount);
+            if (iccid) {
+                console.log("Adding balance in SimTLV system:", { iccid, euroAmount });
+                await this.addSimtlvBalance(iccid, user, euroAmount, io, simtlvToken, "completed");
+            }
+
+            // ------------------- STEP 10: Update Miles & Tier -------------------
+            const milesValue = user.tier === "VIP"
+                ? 8
+                : user.tier === "Diamond"
+                    ? 7
+                    : user.tier === "Gold"
+                        ? 6
+                        : 5;
+            const milesToAdd = usdAmount * milesValue;
+            console.log("Updating miles & tier:", { userId, milesToAdd });
+            await this.updateMilesAndTier(userId, milesToAdd);
+
+            // ------------------- STEP 11: Update User Balance -------------------
+
+            console.log("Incrementing user balance:", { usdAmount, bonusBalance });
+
+            await userRef.update({
+                balance: admin.firestore.FieldValue.increment(usdAmount),
+            });
+            await userRef.update({
+                balance: admin.firestore.FieldValue.increment(bonusBalance),
+            });
+
+            // ------------------- STEP 12: Add History -------------------
+            await this.addHistory(userId, {
+                amount: baseAmount,
+                bonus: bonusBalance,
+                currentBonus: null,
+                dateTime: new Date().toISOString(),
+                isPayAsyouGo: true,
+                isTopup: true,
+                paymentType,
+                planName: null,
+                referredBy: "",
+                type: "TopUp",
+            });
+            console.log("History entry added for TopUp");
+
+            // ------------------- STEP 13: Save Transaction -------------------
+            await db.collection("transactions").add({
+                userId,
+                amount: baseAmount,
+                transactionId,
+                transactionTime: new Date(),
+                isUsed: true,
+                provider: "paypal",
+                productType,
+                paymentType,
+                status,
+                orderId,
+            });
+
+            await Transaction.update(
+                { amount: usdAmount, product_type: productType, payment_type: paymentType },
+                { where: { transaction_id: transactionId } }
+            );
+
+            console.log("Transaction saved:", { userId, transactionId });
+
+            console.log("===== PayPal transaction processed successfully =====", {
+                userId,
+                transactionId,
+                usdAmount,
+                credited: euroAmount,
+                bonus: bonusBalance,
+            });
+
+
             const payload = {
-                totalPaymentValue: data.amount,
-                paymentMethod: "paypal",
+                totalPaymentValue: data.amount, // USD → integer
+                paymentMethod: "stripe",
                 userUid: user.uid || "unknown",
                 firstName: user.firstName || "",
                 lastName: user.lastName || "",
@@ -1890,7 +2159,7 @@ usdToEur(usd) {
                 transactionId: data.id,
                 invoiceName: data.metadata.invoiceName || "",
                 product: data.metadata.productType || "unknown",
-                paymentType: data.metadata.paymentType || "paypal",
+                paymentType: data.metadata.paymentType || "stripe",
             };
 
             console.log("Posting to n8n webhook:", payload);
@@ -1901,455 +2170,209 @@ usdToEur(usd) {
                 { headers: { "Content-Type": "application/json" } }
             );
 
-            console.log("===== PayPal webhook ended (GigaBoost) =====");
-            return;
+            console.log("===== PayPal transaction ended =====");
+        } catch (err) {
+            console.log("❌ savePayPalTransaction error", { error: err.message });
+            await this.notifyAdminEmail("PayPal Webhook Failure", err.message);
         }
-
-        // ------------------- STEP 4: Coupon Reset -------------------
-        if (user.couponValue && user.couponValue > 0 && user.couponType) {
-            console.log("Coupon detected → redeeming:", { type: user.couponType, value: user.couponValue });
-
-            if (user.couponType === "percentageDiscount") {
-                const originalAmount = usdAmount / (1 - (user.couponValue / 100));
-                usdAmount = originalAmount;
-                console.log("Coupon reversed discount → new amount:", usdAmount);
-            }
-
-            await userRef.update({ couponValue: 0, couponType: null });
-            console.log("Coupon reset completed");
-        }
-
-        // ------------------- STEP 5: Next Topup Bonus -------------------
-        if (user.nextTopupBonus && user.nextTopupBonus.value) {
-            console.log("Next Topup Bonus detected → applying:", user.nextTopupBonus);
-
-            usdAmount += user.nextTopupBonus.value;
-            await userRef.update({ nextTopupBonus: admin.firestore.FieldValue.delete() });
-
-            await this.addHistory(userId, {
-                amount: user.nextTopupBonus.value,
-                bonus: 0,
-                currentBonus: null,
-                dateTime: new Date().toISOString(),
-                isPayAsyouGo: true,
-                isTopup: true,
-                paymentType,
-                planName: null,
-                referredBy: "",
-                type: "Next Topup Bonus",
-            });
-
-            console.log("Next Topup Bonus applied → new amount:", usdAmount);
-        }
-
-        // ------------------- STEP 6: Tier Bonus -------------------
-        const tierRates = { silver: 0.05, gold: 0.07, diamond: 0.08, vip: 0.1 };
-        const rate = tierRates[user.tier] || 0;
-        if (amount >= 20 && rate > 0) {
-            bonusBalance = amount * rate;
-            usdAmount += bonusBalance;
-            console.log("Tier bonus applied:", { tier: user.tier, bonusBalance, newAmount: usdAmount });
-        }
-
-        // ------------------- STEP 7: ICCID Activation -------------------
-        let simtlvToken = user.existingUser ? await getMainToken() : await getToken();
-        let iccid = null;
-
-        if (user.isActive === false) {
-            console.log("User inactive → activating ICCID");
-            const iccidResult = await iccidService.activeIccid({
-                uid: userId,
-                amount: usdAmount,
-                paymentType,
-                transactionId,
-                simtlvToken,
-            });
-            iccid = iccidResult.iccid;
-            console.log("ICCID activation result:", iccidResult);
-        }
-        iccid = user.iccid || iccid;
-        console.log("Resolved ICCID:", iccid);
-
-        // ------------------- STEP 8: Referral Bonus -------------------
-        console.log("Checking referral status:", { referredBy, referralUsed: user.referralUsed });
-        if (referredBy && !user.referralUsed) {
-            console.log("Referral detected → applying for", { referredBy, userId });
-            const referrerSnap = await db
-                .collection("app-registered-users")
-                .where("referralCode", "==", referredBy)
-                .limit(1)
-                .get();
-
-            if (!referrerSnap.empty) {
-                const referrer = referrerSnap.docs[0];
-                const referrerId = referrer.id;
-                const refData = referrer.data();
-
-                const refBonus =
-                    refData.tier === "VIP"
-                        ? 8
-                        : refData.tier === "Diamond"
-                            ? 7
-                            : refData.tier === "Gold"
-                                ? 6
-                                : 5;
-                const milesAmount = refData.tier === "VIP"
-                    ? 800
-                    : refData.tier === "Diamond"
-                        ? 700
-                        : refData.tier === "Gold"
-                            ? 600
-                            : 500;
-
-                await db.collection("app-registered-users").doc(referrerId).update({
-                    balance: admin.firestore.FieldValue.increment(refBonus),
-                    miles: admin.firestore.FieldValue.increment(milesAmount),
-                    "referralStats.pendingCount": (refData.referralStats?.pendingCount || 1) - 1,
-                });
-
-                await this.addHistory(referrerId, {
-                    amount: refBonus,
-                    bonus: 0,
-                    currentBonus: null,
-                    dateTime: new Date().toISOString(),
-                    isPayAsyouGo: true,
-                    isTopup: true,
-                    paymentType: paymentType,
-                    planName: null,
-                    referredBy: "",
-                    type: "Referral Bonus",
-                });
-
-
-                await userRef.update({
-                    balance: admin.firestore.FieldValue.increment(5),
-                    referralUsed: true,
-                });
-
-
-                await this.addHistory(userId, {
-                    amount: 5,
-                    bonus: 0,
-                    currentBonus: null,
-                    dateTime: new Date().toISOString(),
-                    isPayAsyouGo: true,
-                    isTopup: true,
-                    paymentType: paymentType,
-                    planName: null,
-                    referredBy: "",
-                    type: "Referral Reward",
-                });
-
-
-                if (refData.fcmToken) {
-                    await this.sendNotification(
-                        refData.fcmToken,
-                        "Referral Bonus!",
-                        "You earned bonus!"
-                    );
-                }
-            }
-        }
-
-        // ------------------- STEP 9: Add SimTLV Balance -------------------
-        let euroAmount = this.usdToEur(usdAmount);
-        if (iccid) {
-            console.log("Adding balance in SimTLV system:", { iccid, euroAmount });
-            await this.addSimtlvBalance(iccid, user, euroAmount, io, simtlvToken, "completed");
-        }
-
-        // ------------------- STEP 10: Update Miles & Tier -------------------
-        const milesValue = user.tier === "VIP"
-            ? 8
-            : user.tier === "Diamond"
-                ? 7
-                : user.tier === "Gold"
-                    ? 6
-                    : 5;
-        const milesToAdd = usdAmount * milesValue;
-        console.log("Updating miles & tier:", { userId, milesToAdd });
-        await this.updateMilesAndTier(userId, milesToAdd);
-
-        // ------------------- STEP 11: Update User Balance -------------------
-
-        console.log("Incrementing user balance:", { usdAmount, bonusBalance });
-
-        await userRef.update({
-            balance: admin.firestore.FieldValue.increment(usdAmount),
-        });
-        await userRef.update({
-            balance: admin.firestore.FieldValue.increment(bonusBalance),
-        });
-
-        // ------------------- STEP 12: Add History -------------------
-        await this.addHistory(userId, {
-            amount: baseAmount,
-            bonus: bonusBalance,
-            currentBonus: null,
-            dateTime: new Date().toISOString(),
-            isPayAsyouGo: true,
-            isTopup: true,
-            paymentType,
-            planName: null,
-            referredBy: "",
-            type: "TopUp",
-        });
-        console.log("History entry added for TopUp");
-
-        // ------------------- STEP 13: Save Transaction -------------------
-        await db.collection("transactions").add({
-            userId,
-            amount: baseAmount,
-            transactionId,
-            transactionTime: new Date(),
-            isUsed: true,
-            provider: "paypal",
-            productType,
-            paymentType,
-            status,
-            orderId,
-        });
-
-        await Transaction.update(
-            { amount: usdAmount, product_type: productType, payment_type: paymentType },
-            { where: { transaction_id: transactionId } }
-        );
-
-        console.log("Transaction saved:", { userId, transactionId });
-
-        console.log("===== PayPal transaction processed successfully =====", {
-            userId,
-            transactionId,
-            usdAmount,
-            credited: euroAmount,
-            bonus: bonusBalance,
-        });
-
-
-        const payload = {
-            totalPaymentValue: data.amount, // USD → integer
-            paymentMethod: "stripe",
-            userUid: user.uid || "unknown",
-            firstName: user.firstName || "",
-            lastName: user.lastName || "",
-            userEmail: user.email || "",
-            transactionId: data.id,
-            invoiceName: data.metadata.invoiceName || "",
-            product: data.metadata.productType || "unknown",
-            paymentType: data.metadata.paymentType || "stripe",
-        };
-
-        console.log("Posting to n8n webhook:", payload);
-
-        await axios.post(
-            "https://n8n-sys.simtlv.co.il/webhook/21731742-dd24-461c-8c42-9cfafb5064f7",
-            payload,
-            { headers: { "Content-Type": "application/json" } }
-        );
-
-        console.log("===== PayPal transaction ended =====");
-    } catch (err) {
-        console.log("❌ savePayPalTransaction error", { error: err.message });
-        await this.notifyAdminEmail("PayPal Webhook Failure", err.message);
     }
-}
 
     async paymentService(req, res) {
-    try {
-        console.log("🚀 Checking all Stripe transactions...");
-        const { id } = req.query;
+        try {
+            console.log("🚀 Checking all Stripe transactions...");
+            const { id } = req.query;
 
-        const whereClause = { provider: "stripe" };
-        if (id) whereClause.transaction_id = id;
+            const whereClause = { provider: "stripe" };
+            if (id) whereClause.transaction_id = id;
 
-        const transactions = await Transaction.findAll({
-            where: whereClause,
-            order: [["createdAt", "DESC"]],
-        });
+            const transactions = await Transaction.findAll({
+                where: whereClause,
+                order: [["createdAt", "DESC"]],
+            });
 
-        if (!transactions.length) {
-            return res.status(404).json({ success: false, message: "No Stripe transactions found" });
-        }
-
-        console.log(`📦 Found ${transactions.length} Stripe transactions`);
-
-        // 2️⃣ Track which users already had a payment
-        const processedUsers = new Set();
-
-        // 3️⃣ Loop over all transactions
-        for (const tx of transactions) {
-            const stripePaymentId = tx.transaction_id;
-
-            if (!stripePaymentId) continue;
-
-            // Retrieve Stripe PaymentIntent
-            const paymentIntent = await stripe.paymentIntents.retrieve(stripePaymentId);
-            const metadata = paymentIntent.metadata || {};
-
-            const userId = metadata.user_id || metadata.userId;
-            const deviceId = metadata.device_id;
-            const amountUSD = metadata.amountUSD || paymentIntent.amount_received / 100;
-            const ip = metadata.ip || null;
-            const email = metadata.email || null;
-
-            console.log(`🔍 Tx ${stripePaymentId}: user=${userId}, device=${deviceId}, amount=${amountUSD} , ip=${ip}`);
-
-            // Skip if missing user_id or device_id
-            // if (!userId || !deviceId) {
-            console.log(`⚠️ Skipped tx ${stripePaymentId} — missing user_id or device_id`);
-            continue;
-            // }
-
-            // ✅ If this user's first transaction hasn't been processed yet → mark and call affiliate API
-            if (!processedUsers.has(userId)) {
-                console.log(`💰 First payment detected for user ${userId}, calling affiliate API...`);
-
-                const payload = {
-                    device_id: deviceId,
-                    amountUSD,
-                    ip,
-                    email,
-                    user_id: userId,
-                    id: stripePaymentId,
-                };
-
-                try {
-                    const response = await axios.post(
-                        "https://app-link.simtlv.co.il/api/affiliates/get-payment-confirmation",
-                        payload,
-                        { headers: { "Content-Type": "application/json" } }
-                    );
-
-                    console.log(`✅ Affiliate confirmation for user ${userId}:`, response.data);
-
-                    processedUsers.add(userId);
-                } catch (err) {
-                    console.error(`❌ Affiliate confirmation failed for ${userId}:`, err.message);
-                }
-            } else {
-                console.log(`⏭️ Skipped — user ${userId} already processed`);
+            if (!transactions.length) {
+                return res.status(404).json({ success: false, message: "No Stripe transactions found" });
             }
-        }
 
-        return res.status(200).json({
-            success: true,
-            message: "Processed Stripe transactions successfully",
-            totalTransactions: transactions.length,
-            totalFirstPayments: processedUsers.size,
-        });
-    } catch (error) {
-        console.error("❌ Error in paymentService:", error);
-        return res.status(500).json({
-            success: false,
-            message: "Error processing Stripe payments",
-            error: error.message,
-        });
-    }
-}
-    async paymentWooService(req, res){
-    try {
-        console.log("🚀 Fetching WooCommerce transactions from Firestore...");
-        const snapshot = await db
-            .collection("transactions")
-            .where("provider", "==", "woocommerce")
-            .orderBy("transactionTime", "desc")
-            .get();
+            console.log(`📦 Found ${transactions.length} Stripe transactions`);
 
-        if (snapshot.empty) {
-            return res.status(404).json({ message: "No WooCommerce transactions found" });
-        }
+            // 2️⃣ Track which users already had a payment
+            const processedUsers = new Set();
 
-        const simtlvToken = await getMainToken();
-        const telcomUrl = `https://ocs-api.telco-vision.com:7443/ocs-custo/main/v1?token=${simtlvToken}`;
-        const report = [];
+            // 3️⃣ Loop over all transactions
+            for (const tx of transactions) {
+                const stripePaymentId = tx.transaction_id;
 
-        for (const doc of snapshot.docs) {
-            const tx = doc.data();
-            const orderId = tx.orderId;
-            console.log(`📦 Fetching order #${orderId}`);
+                if (!stripePaymentId) continue;
 
-            try {
-                const orderRes = await api.get(`orders/${orderId}`);
-                const order = orderRes.data;
+                // Retrieve Stripe PaymentIntent
+                const paymentIntent = await stripe.paymentIntents.retrieve(stripePaymentId);
+                const metadata = paymentIntent.metadata || {};
 
-                const customersMeta = order.meta_data.filter((m) => m.key.startsWith("customer_"));
+                const userId = metadata.user_id || metadata.userId;
+                const deviceId = metadata.device_id;
+                const amountUSD = metadata.amountUSD || paymentIntent.amount_received / 100;
+                const ip = metadata.ip || null;
+                const email = metadata.email || null;
 
-                for (const meta of customersMeta) {
-                    let customer;
-                    try {
-                        customer = JSON.parse(meta.value);
-                    } catch {
-                        console.warn("⚠️ Invalid customer JSON:", meta.value);
-                        continue;
-                    }
+                console.log(`🔍 Tx ${stripePaymentId}: user=${userId}, device=${deviceId}, amount=${amountUSD} , ip=${ip}`);
 
-                    const { firstName, lastName, email, iccid, amount } = customer;
-                    if (!iccid) continue;
+                // Skip if missing user_id or device_id
+                // if (!userId || !deviceId) {
+                console.log(`⚠️ Skipped tx ${stripePaymentId} — missing user_id or device_id`);
+                continue;
+                // }
 
-                    // 🔹 Fetch Telcom balance
-                    const balanceReq = {
-                        getSingleSubscriber: {
-                            iccid,
-                            withSimInfo: true,
-                            onlySubsInfo: true,
-                        },
+                // ✅ If this user's first transaction hasn't been processed yet → mark and call affiliate API
+                if (!processedUsers.has(userId)) {
+                    console.log(`💰 First payment detected for user ${userId}, calling affiliate API...`);
+
+                    const payload = {
+                        device_id: deviceId,
+                        amountUSD,
+                        ip,
+                        email,
+                        user_id: userId,
+                        id: stripePaymentId,
                     };
 
-                    const balanceRes = await axios.post(telcomUrl, balanceReq, {
-                        headers: { "Content-Type": "application/json" },
-                        timeout: 30000,
-                    });
+                    try {
+                        const response = await axios.post(
+                            "https://app-link.simtlv.co.il/api/affiliates/get-payment-confirmation",
+                            payload,
+                            { headers: { "Content-Type": "application/json" } }
+                        );
 
-                    const subscriberData = balanceRes.data.getSingleSubscriber;
-                    const currentBalance = (subscriberData?.balance * 1.1) || 0;
+                        console.log(`✅ Affiliate confirmation for user ${userId}:`, response.data);
 
-                    report.push({
-                        name: `${firstName || ""} ${lastName || ""}`.trim(),
-                        email,
-                        iccid,
-                        amountAdded: amount,
-                        currentBalance,
-                    });
-
-                    console.log(`✅ ${firstName} ${lastName} | ${iccid} | Amount ${amount} | Balance ${currentBalance}`);
+                        processedUsers.add(userId);
+                    } catch (err) {
+                        console.error(`❌ Affiliate confirmation failed for ${userId}:`, err.message);
+                    }
+                } else {
+                    console.log(`⏭️ Skipped — user ${userId} already processed`);
                 }
-            } catch (err) {
-                console.error(`❌ WooCommerce order fetch failed #${orderId}:`, err.response?.data || err.message);
             }
+
+            return res.status(200).json({
+                success: true,
+                message: "Processed Stripe transactions successfully",
+                totalTransactions: transactions.length,
+                totalFirstPayments: processedUsers.size,
+            });
+        } catch (error) {
+            console.error("❌ Error in paymentService:", error);
+            return res.status(500).json({
+                success: false,
+                message: "Error processing Stripe payments",
+                error: error.message,
+            });
         }
-
-        console.log(`📊 Report ready with ${report.length} entries`);
-
-        // 📗 Generate Excel file
-        const workbook = new ExcelJS.Workbook();
-        const sheet = workbook.addWorksheet("WooCommerce Balances");
-
-        sheet.columns = [
-            { header: "Name", key: "name", width: 25 },
-            { header: "Email", key: "email", width: 30 },
-            { header: "ICCID", key: "iccid", width: 25 },
-            { header: "Amount Added", key: "amountAdded", width: 15 },
-            { header: "Current Balance", key: "currentBalance", width: 18 },
-        ];
-
-        report.forEach((r) => sheet.addRow(r));
-
-        // Style header
-        sheet.getRow(1).font = { bold: true };
-        sheet.getRow(1).alignment = { horizontal: "center" };
-
-        // Send as downloadable file
-        res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-        res.setHeader("Content-Disposition", "attachment; filename=woocommerce_balance_report.xlsx");
-
-        await workbook.xlsx.write(res);
-        res.end();
-
-    } catch (err) {
-        console.error("❌ Error in paymentService:", err);
-        return res.status(500).json({ message: err.message });
     }
-};
+    async paymentWooService(req, res) {
+        try {
+            console.log("🚀 Fetching WooCommerce transactions from Firestore...");
+            const snapshot = await db
+                .collection("transactions")
+                .where("provider", "==", "woocommerce")
+                .orderBy("transactionTime", "desc")
+                .get();
+
+            if (snapshot.empty) {
+                return res.status(404).json({ message: "No WooCommerce transactions found" });
+            }
+
+            const simtlvToken = await getMainToken();
+            const telcomUrl = `https://ocs-api.telco-vision.com:7443/ocs-custo/main/v1?token=${simtlvToken}`;
+            const report = [];
+
+            for (const doc of snapshot.docs) {
+                const tx = doc.data();
+                const orderId = tx.orderId;
+                console.log(`📦 Fetching order #${orderId}`);
+
+                try {
+                    const orderRes = await api.get(`orders/${orderId}`);
+                    const order = orderRes.data;
+
+                    const customersMeta = order.meta_data.filter((m) => m.key.startsWith("customer_"));
+
+                    for (const meta of customersMeta) {
+                        let customer;
+                        try {
+                            customer = JSON.parse(meta.value);
+                        } catch {
+                            console.warn("⚠️ Invalid customer JSON:", meta.value);
+                            continue;
+                        }
+
+                        const { firstName, lastName, email, iccid, amount } = customer;
+                        if (!iccid) continue;
+
+                        // 🔹 Fetch Telcom balance
+                        const balanceReq = {
+                            getSingleSubscriber: {
+                                iccid,
+                                withSimInfo: true,
+                                onlySubsInfo: true,
+                            },
+                        };
+
+                        const balanceRes = await axios.post(telcomUrl, balanceReq, {
+                            headers: { "Content-Type": "application/json" },
+                            timeout: 30000,
+                        });
+
+                        const subscriberData = balanceRes.data.getSingleSubscriber;
+                        const currentBalance = (subscriberData?.balance * 1.1) || 0;
+
+                        report.push({
+                            name: `${firstName || ""} ${lastName || ""}`.trim(),
+                            email,
+                            iccid,
+                            amountAdded: amount,
+                            currentBalance,
+                        });
+
+                        console.log(`✅ ${firstName} ${lastName} | ${iccid} | Amount ${amount} | Balance ${currentBalance}`);
+                    }
+                } catch (err) {
+                    console.error(`❌ WooCommerce order fetch failed #${orderId}:`, err.response?.data || err.message);
+                }
+            }
+
+            console.log(`📊 Report ready with ${report.length} entries`);
+
+            // 📗 Generate Excel file
+            const workbook = new ExcelJS.Workbook();
+            const sheet = workbook.addWorksheet("WooCommerce Balances");
+
+            sheet.columns = [
+                { header: "Name", key: "name", width: 25 },
+                { header: "Email", key: "email", width: 30 },
+                { header: "ICCID", key: "iccid", width: 25 },
+                { header: "Amount Added", key: "amountAdded", width: 15 },
+                { header: "Current Balance", key: "currentBalance", width: 18 },
+            ];
+
+            report.forEach((r) => sheet.addRow(r));
+
+            // Style header
+            sheet.getRow(1).font = { bold: true };
+            sheet.getRow(1).alignment = { horizontal: "center" };
+
+            // Send as downloadable file
+            res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+            res.setHeader("Content-Disposition", "attachment; filename=woocommerce_balance_report.xlsx");
+
+            await workbook.xlsx.write(res);
+            res.end();
+
+        } catch (err) {
+            console.error("❌ Error in paymentService:", err);
+            return res.status(500).json({ message: err.message });
+        }
+    };
 }
 
 module.exports = new PaymentService();
