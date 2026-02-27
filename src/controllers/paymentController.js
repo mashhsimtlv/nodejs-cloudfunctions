@@ -93,6 +93,8 @@ exports.createStripePaymentIntent = async (req, res) => {
         clientSecret: intent.client_secret,
     });
 
+    console.log(amount, "amount for intent")
+
     res.json({ clientSecret: intent.client_secret });
     // } catch (err) {
     //     logger.error("Stripe payment intent failed", { error: err.message });
