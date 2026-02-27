@@ -1412,7 +1412,7 @@ class PaymentService {
                     {
                         amount: {
                             currency_code: currency || "USD",
-                            value: amount?.toString() || "10.00"
+                            value: parseFloat(amount).toFixed(2) || "10.00"
                         },
                         custom_id: customId,
                     },
