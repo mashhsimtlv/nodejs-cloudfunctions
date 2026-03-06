@@ -93,7 +93,7 @@ const fetchGclidRecord = async (code) => {
         "SELECT * FROM gclid_codes WHERE code = ? LIMIT 1",
         { replacements: [code] }
     );
-    console.log(rows , rows[0] , "sdfsdfdsf");
+    console.log(rows, rows[0], "sdfsdfdsf");
     return Array.isArray(rows) && rows.length ? rows[0] : null;
 };
 
@@ -304,7 +304,7 @@ exports.getAllConversation = async (req, res) => {
 
         const refCode = extractRefCode(body?.conversation?.firstIncomingMessage);
 
-        console.log(refCode , "ref code is found")
+        console.log(refCode, "ref code is found")
 
         if (!refCode) {
             return res.status(200).json({ success: true });
@@ -334,7 +334,7 @@ exports.getAllConversation = async (req, res) => {
         const endpoint = `${baseUrl.replace(/\/+$/, "")}/api/transaction/store-leads-orders`;
         const leadPayload = normalizeLeadPayload(gclidRecord, leadPhone);
         try {
-            console.log(leadPayload , "lead payload to send to transaction api")
+            console.log(leadPayload, "lead payload to send to transaction api")
             const statusCode = await postJson(endpoint, leadPayload);
             if (!(statusCode >= 200 && statusCode < 300)) {
                 console.error("Transaction API returned non-2xx:", statusCode);
@@ -366,16 +366,9 @@ exports.listTags = async (req, res) => {
         if (userIdRaw) {
             const userId = String(userIdRaw);
             const mentionNeedle = `"${userId}"`;
-            const mentionPresenceCondition = {
-                [Op.and]: [
-                    { mentionedUserIds: { [Op.not]: null } },
-                    { mentionedUserIds: { [Op.ne]: "[]" } },
-                ],
-            };
             whereClause[Op.or] = [
                 { assigneeId: userId },
                 { mentionedUserIds: { [Op.like]: `%${mentionNeedle}%` } },
-                mentionPresenceCondition,
             ];
         }
 
@@ -483,7 +476,7 @@ exports.addTagComment = async (req, res) => {
 };
 exports.setTagsCompletedAt = async (req, res) => {
     try {
-        const {tagId } = req.body;
+        const { tagId } = req.body;
 
         if (!tagId) {
             return res.status(400).json({ error: "tagId param is required" });
