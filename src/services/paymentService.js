@@ -82,7 +82,7 @@ class PaymentService {
             return { blocked: true, message: "Payments are not allowed for this email domain." };
         }
 
-        console.log(amount , "stripe payment")
+        console.log(amount, "stripe payment")
 
         // ✅ Proceed with Stripe PaymentIntent
         return await stripe.paymentIntents.create({
@@ -224,6 +224,11 @@ class PaymentService {
             currency: "usd",
             payment_method_types: ["card", "google_pay"],
             statement_descriptor: "SIMTLV - eSIM&Sim",
+            payment_method_options: {
+                card: {
+                    request_three_d_secure: "automatic",
+                },
+            },
             metadata: { userId, productType, paymentType, planName, planId, flowVersion: "v2", device_id },
         });
     }

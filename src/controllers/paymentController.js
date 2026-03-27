@@ -124,9 +124,6 @@ exports.createStripeTestPaymentIntent = async (req, res) => {
             device_id
         });
 
-
-
-
         logger.info("Stripe payment intent created", {
             userId,
             amount,
