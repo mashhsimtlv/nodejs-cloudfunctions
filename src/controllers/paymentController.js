@@ -103,16 +103,12 @@ exports.createStripePaymentIntent = async (req, res) => {
 };
 exports.createStripeTestPaymentIntent = async (req, res) => {
     try {
-        const io = req.app.get("io");
+        console.log(req.body, "req body");
 
-        console.log(req.body, "req body")
+        const { userId, productType, paymentType, planName, planId, device_id } = req.body;
 
-
-        const { amount, userId, productType, paymentType, planName, planId, device_id } = req.body;
-
-        if (!amount || typeof amount !== "number") {
-            return res.status(400).json({ error: "Amount must be a valid number" });
-        }
+        // parse amount same way as live intent — handles string or number from client
+        const amount = req.body.amount ? parseInt(req.body.amount) : 10;
 
         const intent = await paymentService.createStripeTestPaymentIntent({
             amount,
@@ -121,8 +117,14 @@ exports.createStripeTestPaymentIntent = async (req, res) => {
             paymentType,
             planName,
             planId,
-            device_id
+            device_id,
         });
+
+        // guard: service can return { blocked: true } for blocked emails
+        if (!intent || intent.blocked) {
+            logger.warn("Test payment intent blocked or null", { userId });
+            return res.status(403).json({ error: intent?.message || "Payment not allowed for this account" });
+        }
 
         logger.info("Stripe payment intent created", {
             userId,
@@ -132,10 +134,10 @@ exports.createStripeTestPaymentIntent = async (req, res) => {
             clientSecret: intent.client_secret,
         });
 
-        res.json({ clientSecret: intent.client_secret });
+        return res.json({ clientSecret: intent.client_secret });
     } catch (err) {
         logger.error("Stripe payment intent failed", { error: err.message });
-        res.status(500).json({ error: err.message });
+        return res.status(500).json({ error: err.message });
     }
 };
 

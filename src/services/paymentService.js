@@ -222,13 +222,8 @@ class PaymentService {
         return await stripeTest.paymentIntents.create({
             amount,
             currency: "usd",
-            payment_method_types: ["card", "google_pay"],
+            automatic_payment_methods: { enabled: true },
             statement_descriptor: "SIMTLV - eSIM&Sim",
-            payment_method_options: {
-                card: {
-                    request_three_d_secure: "automatic",
-                },
-            },
             metadata: { userId, productType, paymentType, planName, planId, flowVersion: "v2", device_id },
         });
     }
