@@ -1031,6 +1031,7 @@ class PaymentService {
             const emitPayload = {
                 number: assigned.number.number,
                 password: assigned.number.password,
+                extension: assigned.number.extension,
             };
 
             this.delayedEmit(io, "payment_event_" + userId, {
@@ -1519,6 +1520,7 @@ class PaymentService {
             const emitPayload = {
                 number: assigned.number.number,
                 password: assigned.number.password,
+                extension: assigned.number.extension,
             };
 
             this.delayedEmit(io, "payment_event_" + userId, {

@@ -17,6 +17,10 @@ class CallNumber extends Model {
                     type: DataTypes.STRING(255),
                     allowNull: false,
                 },
+                extension: {
+                    type: DataTypes.STRING(50),
+                    allowNull: true,
+                },
                 is_occupied: {
                     type: DataTypes.BOOLEAN,
                     allowNull: false,
