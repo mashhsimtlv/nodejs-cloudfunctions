@@ -30,9 +30,9 @@ exports.createStripePaymentIntent = async (req, res) => {
     console.log("Client IP:", ip);
 
 
-    const {  userId, productType, paymentType, planName, planId, device_id, paymentFor } = req.body;
+    const { userId, productType, paymentType, planName, planId, device_id, paymentFor } = req.body;
 
-    const amount = req.body.amount?parseInt(req.body.amount):10;
+    const amount = req.body.amount ? parseInt(req.body.amount) : 10;
     //
     // if (!amount || typeof amount !== "number") {
     //     return res.status(400).json({ error: "Amount must be a valid number" });
@@ -308,7 +308,7 @@ exports.getCallingCredentialsByUser = async (req, res) => {
                 {
                     model: CallNumber,
                     as: "callingNumber",
-                    attributes: ["id", "number", "country", "password"],
+                    attributes: ["id", "number", "country", "password", "extension"],
                 },
             ],
             order: [["createdAt", "DESC"]],
