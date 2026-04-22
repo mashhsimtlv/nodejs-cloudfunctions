@@ -321,6 +321,7 @@ exports.getCallingCredentialsByUser = async (req, res) => {
                 number: m.callingNumber.number,
                 country: m.callingNumber.country,
                 password: m.callingNumber.password,
+                extension: m.callingNumber.extension,
                 start_time: m.start_time,
                 end_time: m.end_time,
                 current_balance: m.current_balance,
