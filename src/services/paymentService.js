@@ -49,6 +49,8 @@ class PaymentService {
         paymentFor,
         startDate,
         endDate,
+        country,
+        minutes,
     }) {
         console.log("Here is the device id ", device_id);
 
@@ -103,6 +105,8 @@ class PaymentService {
                 paymentFor,
                 startDate,
                 endDate,
+                country,
+                minutes,
             },
         });
     }

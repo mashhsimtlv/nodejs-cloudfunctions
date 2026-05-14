@@ -30,7 +30,7 @@ exports.createStripePaymentIntent = async (req, res) => {
     console.log("Client IP:", ip);
 
 
-    const { userId, productType, paymentType, planName, planId, device_id, paymentFor } = req.body;
+    const { userId, productType, paymentType, planName, planId, device_id, paymentFor, country, minutes } = req.body;
 
     const amount = req.body.amount ? parseInt(req.body.amount) : 10;
     //
@@ -47,7 +47,9 @@ exports.createStripePaymentIntent = async (req, res) => {
         planId,
         device_id,
         ip,
-        paymentFor
+        paymentFor,
+        country,
+        minutes,
     });
 
     // Save to UnpaidTransaction table
