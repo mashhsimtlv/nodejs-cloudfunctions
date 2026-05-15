@@ -23,6 +23,12 @@ const MINUTES_UPGRADE = {
     1000: 17, // +$17 to reach 1000 minutes
 };
 
+const COUNTRY_ALIASES = {
+    US: "UNITED STATES OF AMERICA",
+    USA: "UNITED STATES OF AMERICA",
+    UK: "UNITED KINGDOM",
+};
+
 const normalizeKey = (val = "") => String(val).trim().toUpperCase();
 
 const parseDate = (value, label) => {
@@ -92,6 +98,11 @@ class PricingService {
             return map.get(normalized);
         }
 
+        const alias = COUNTRY_ALIASES[normalized];
+        if (alias && map.has(alias)) {
+            return map.get(alias);
+        }
+
         // Allow ISO country codes (e.g., IL -> Israel) using Intl region names.
         let resolvedName;
         if (normalized.length === 2) {
@@ -105,6 +116,11 @@ class PricingService {
 
         if (resolvedName && map.has(resolvedName)) {
             return map.get(resolvedName);
+        }
+
+        const resolvedAlias = resolvedName ? COUNTRY_ALIASES[resolvedName] : null;
+        if (resolvedAlias && map.has(resolvedAlias)) {
+            return map.get(resolvedAlias);
         }
 
         throw new Error(`No price found for country "${countryInput}" in price list`);
@@ -138,6 +154,39 @@ class PricingService {
             totalPrice: Number(totalPrice.toFixed(2)),
             perMinuteRate: Number(rate),
             creditValue: Number((minutes * rate).toFixed(2)),
+        };
+    }
+
+    getNumberPrice({
+        startTime,
+        endTime,
+        country,
+    }) {
+        const startDate = parseDate(startTime, "startTime");
+        const endDate = parseDate(endTime, "endTime");
+        const days = calculateInclusiveDays(startDate, endDate);
+        const rate = this.getPriceForCountry(country);
+
+        const minutesOptions = [200, 500, 1000];
+        const planTypes = Object.keys(PLAN_CONFIG);
+
+        const quotes = {};
+        planTypes.forEach((plan) => {
+            quotes[plan] = {};
+            minutesOptions.forEach((minutes) => {
+                quotes[plan][minutes] = this.buildQuote({
+                    days,
+                    planType: plan,
+                    minutes,
+                    rate,
+                });
+            });
+        });
+
+        return {
+            days,
+            rate,
+            quotes,
         };
     }
 
