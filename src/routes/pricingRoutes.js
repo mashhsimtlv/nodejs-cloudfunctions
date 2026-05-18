@@ -3,6 +3,7 @@ const pricingController = require("../controllers/pricingController");
 
 const router = express.Router();
 
+router.get("/call-rates",    pricingController.getCallRates);
 router.post("/number-price", pricingController.getNumberPrice);
 router.get("/number-price", pricingController.getNumberPrice);
 router.post("/call-plan", pricingController.calculateCallPlan);

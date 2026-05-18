@@ -1,7 +1,7 @@
 const fs = require("fs");
 const path = require("path");
 const xlsx = require("xlsx");
-const { CallPlanQuote } = require("../models");
+const { CallPlanQuote, CallRouteRate, UserCallerNumber } = require("../models");
 
 const PRICE_LIST_PATH = path.resolve(__dirname, "../../Price List.xlsx");
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
@@ -18,9 +18,9 @@ const PLAN_CONFIG = {
 };
 
 const MINUTES_UPGRADE = {
-    200: 0,   // base
-    500: 9,   // +$9 to reach 500 minutes
-    1000: 17, // +$17 to reach 1000 minutes
+    200: 0,
+    500: 9,
+    1000: 17,
 };
 
 const COUNTRY_ALIASES = {
@@ -30,6 +30,43 @@ const COUNTRY_ALIASES = {
 };
 
 const normalizeKey = (val = "") => String(val).trim().toUpperCase();
+
+// Non-standard codes that need remapping for Intl/flag lookups
+const CODE_TO_ISO2 = { UK: "GB" };
+
+// Reverse map: full country name → ISO2 (for call_plan_quotes.country that stores full names)
+const NAME_TO_ISO2 = {
+    ISRAEL: "IL",
+    "UNITED KINGDOM": "GB",
+    "UNITED STATES OF AMERICA": "US",
+    "UNITED STATES": "US",
+};
+
+function isoToFlag(code) {
+    const iso2 = (CODE_TO_ISO2[code?.toUpperCase()] || code || "").toUpperCase();
+    if (iso2.length !== 2) return "";
+    return String.fromCodePoint(...iso2.split("").map((c) => 0x1f1a5 + c.charCodeAt(0)));
+}
+
+function isoToName(code) {
+    const iso2 = CODE_TO_ISO2[code?.toUpperCase()] || code;
+    try {
+        return new Intl.DisplayNames(["en"], { type: "region" }).of(iso2.toUpperCase());
+    } catch {
+        return code;
+    }
+}
+
+function countryInfo(code) {
+    return { code: code.toUpperCase(), name: isoToName(code) || code, flag: isoToFlag(code) };
+}
+
+// Normalize a stored country value (full name or ISO2) to a 2-letter DB key
+function normalizeSrcCountry(country) {
+    const s = String(country).trim();
+    if (s.length === 2) return s.toUpperCase();
+    return NAME_TO_ISO2[s.toUpperCase()] || s.slice(0, 2).toUpperCase();
+}
 
 const parseDate = (value, label) => {
     const parsed = new Date(value);
@@ -157,36 +194,70 @@ class PricingService {
         };
     }
 
-    getNumberPrice({
-        startTime,
-        endTime,
-        country,
-    }) {
+    getNumberPrice({ startTime, endTime, country }) {
         const startDate = parseDate(startTime, "startTime");
-        const endDate = parseDate(endTime, "endTime");
-        const days = calculateInclusiveDays(startDate, endDate);
-        const rate = this.getPriceForCountry(country);
+        const endDate   = parseDate(endTime, "endTime");
+        const days      = calculateInclusiveDays(startDate, endDate);
+        const rate      = this.getPriceForCountry(country);
 
         const minutesOptions = [200, 500, 1000];
-        const planTypes = Object.keys(PLAN_CONFIG);
+        const planTypes      = Object.keys(PLAN_CONFIG);
 
         const quotes = {};
         planTypes.forEach((plan) => {
             quotes[plan] = {};
             minutesOptions.forEach((minutes) => {
-                quotes[plan][minutes] = this.buildQuote({
-                    days,
-                    planType: plan,
-                    minutes,
-                    rate,
-                });
+                quotes[plan][minutes] = this.buildQuote({ days, planType: plan, minutes, rate });
             });
         });
 
+        return { days, rate, quotes };
+    }
+
+    async getCallRates({ userId, dstCountry }) {
+        if (!userId) throw new Error("userId is required");
+
+        const plan = await CallPlanQuote.findOne({
+            where: { user_id: userId },
+            order: [["start_time", "DESC"]],
+        });
+
+        if (!plan) throw new Error("No call plan found for this user");
+
+        const srcCountry = normalizeSrcCountry(plan.country);
+
+        // Live remaining balance from user_caller_numbers (deducted per call)
+        const userCallerNumber = await UserCallerNumber.findOne({
+            where: { user_id: userId, end_time: null },
+            order: [["start_time", "DESC"], ["id", "DESC"]],
+        });
+        const currentBalance = userCallerNumber ? parseFloat(userCallerNumber.current_balance) : 0;
+
+        const where = { src_country: srcCountry, is_active: true };
+        if (dstCountry) where.dst_country = dstCountry.toUpperCase();
+
+        const rates = await CallRouteRate.findAll({ where, order: [["dst_country", "ASC"]] });
+
+        const planRate = parseFloat(plan.per_minute_rate);
+        const remainingMinutes = planRate > 0 ? Math.floor(currentBalance / planRate) : 0;
+
         return {
-            days,
-            rate,
-            quotes,
+            src_country: countryInfo(srcCountry),
+            plan: {
+                minutes_option: plan.minutes_option,
+                credit_value: parseFloat(plan.credit_value),
+                current_balance: currentBalance,
+                remaining_minutes: remainingMinutes,
+            },
+            destinations: rates.map((r) => {
+                const ratePerMin = parseFloat(r.rate_per_min);
+                return {
+                    ...countryInfo(r.dst_country),
+                    per_min_price: ratePerMin,
+                    currency: r.currency || "USD",
+                    available_minutes: Math.floor(currentBalance / ratePerMin),
+                };
+            }),
         };
     }
 
@@ -208,18 +279,13 @@ class PricingService {
         const rate = this.getPriceForCountry(country);
 
         const minutesOptions = [200, 500, 1000];
-        const planTypes = Object.keys(PLAN_CONFIG);
+        const planTypes      = Object.keys(PLAN_CONFIG);
 
         const quotes = {};
         planTypes.forEach((plan) => {
             quotes[plan] = {};
             minutesOptions.forEach((minutes) => {
-                quotes[plan][minutes] = this.buildQuote({
-                    days,
-                    planType: plan,
-                    minutes,
-                    rate,
-                });
+                quotes[plan][minutes] = this.buildQuote({ days, planType: plan, minutes, rate });
             });
         });
 

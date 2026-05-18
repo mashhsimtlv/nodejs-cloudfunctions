@@ -1,5 +1,17 @@
 const pricingService = require("../services/pricingService");
 
+exports.getCallRates = async (req, res) => {
+    try {
+        const userId     = req.query.userId     ?? req.query.user_id     ?? req.body?.userId     ?? req.body?.user_id;
+        const dstCountry = req.query.dstCountry ?? req.query.dst_country ?? req.body?.dstCountry ?? req.body?.dst_country;
+
+        const data = await pricingService.getCallRates({ userId, dstCountry });
+        return res.status(200).json({ success: true, data });
+    } catch (err) {
+        return res.status(400).json({ success: false, error: err.message });
+    }
+};
+
 exports.getNumberPrice = async (req, res) => {
     try {
         const payload = {
