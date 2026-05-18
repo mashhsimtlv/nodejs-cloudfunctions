@@ -24,6 +24,7 @@ exports.getNumberPrice = async (req, res) => {
         const toStr = (val) => (val == null ? null : String(Number(val.toFixed ? val.toFixed(2) : val)));
 
         const incoming200 = quotes?.incoming?.[200];
+        const outgoing100 = quotes?.incoming_outgoing?.[100];
         const outgoing200 = quotes?.incoming_outgoing?.[200];
         const outgoing500 = quotes?.incoming_outgoing?.[500];
         const outgoing1000 = quotes?.incoming_outgoing?.[1000];
@@ -40,12 +41,14 @@ exports.getNumberPrice = async (req, res) => {
                     total_price: toStr(incoming200.totalPrice),
                 }
                 : null,
-            incoming_outgoing: outgoing200
+            incoming_outgoing: outgoing100
                 ? {
-                    base_price: toStr(outgoing200.basePrice),
-                    extra_price: toStr(outgoing200.extraPrice),
-                    extra_block: toStr(outgoing200.extraBlocks),
-                    total_price: toStr(outgoing200.totalPrice),
+                    base_price: toStr(outgoing100.basePrice),
+                    extra_price: toStr(outgoing100.extraPrice),
+                    extra_block: toStr(outgoing100.extraBlocks),
+                    total_price: toStr(outgoing100.totalPrice),
+                    minutes_100: toStr(outgoing100.totalPrice),
+                    minutes_200: outgoing200 ? toStr(outgoing200.totalPrice) : null,
                     minutes_500: outgoing500 ? toStr(outgoing500.totalPrice) : null,
                     minutes_1000: outgoing1000 ? toStr(outgoing1000.totalPrice) : null,
                 }
@@ -77,6 +80,7 @@ exports.calculateCallPlan = async (req, res) => {
         const toStr = (val) => (val == null ? null : String(Number(val.toFixed ? val.toFixed(2) : val)));
 
         const incoming200 = quotes?.incoming?.[200];
+        const outgoing100 = quotes?.incoming_outgoing?.[100];
         const outgoing200 = quotes?.incoming_outgoing?.[200];
         const outgoing500 = quotes?.incoming_outgoing?.[500];
         const outgoing1000 = quotes?.incoming_outgoing?.[1000];
@@ -90,12 +94,14 @@ exports.calculateCallPlan = async (req, res) => {
                     total_price: toStr(incoming200.totalPrice),
                 }
                 : null,
-            incoming_outgoing: outgoing200
+            incoming_outgoing: outgoing100
                 ? {
-                    base_price: toStr(outgoing200.basePrice),
-                    extra_price: toStr(outgoing200.extraPrice),
-                    extra_block: toStr(outgoing200.extraBlocks),
-                    total_price: toStr(outgoing200.totalPrice),
+                    base_price: toStr(outgoing100.basePrice),
+                    extra_price: toStr(outgoing100.extraPrice),
+                    extra_block: toStr(outgoing100.extraBlocks),
+                    total_price: toStr(outgoing100.totalPrice),
+                    minutes_100: toStr(outgoing100.totalPrice),
+                    minutes_200: outgoing200 ? toStr(outgoing200.totalPrice) : null,
                     minutes_500: outgoing500 ? toStr(outgoing500.totalPrice) : null,
                     minutes_1000: outgoing1000 ? toStr(outgoing1000.totalPrice) : null,
                 }

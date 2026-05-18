@@ -18,9 +18,10 @@ const PLAN_CONFIG = {
 };
 
 const MINUTES_UPGRADE = {
-    200: 0,
-    500: 9,
-    1000: 17,
+    100: 2,   // base
+    200: 5,   // base
+    500: 9,   // +$9 to reach 500 minutes
+    1000: 17, // +$17 to reach 1000 minutes
 };
 
 const COUNTRY_ALIASES = {
@@ -171,7 +172,7 @@ class PricingService {
 
         const minutesUpgradePrice = MINUTES_UPGRADE[minutes];
         if (minutesUpgradePrice === undefined) {
-            throw new Error("minutes must be one of: 200, 500, 1000");
+            throw new Error("minutes must be one of: 100, 200, 500, 1000");
         }
 
         const extraDays = Math.max(days - 30, 0);
@@ -200,7 +201,7 @@ class PricingService {
         const days      = calculateInclusiveDays(startDate, endDate);
         const rate      = this.getPriceForCountry(country);
 
-        const minutesOptions = [200, 500, 1000];
+        const minutesOptions = [100, 200, 500, 1000];
         const planTypes      = Object.keys(PLAN_CONFIG);
 
         const quotes = {};
@@ -278,7 +279,7 @@ class PricingService {
         const days = calculateInclusiveDays(startDate, endDate);
         const rate = this.getPriceForCountry(country);
 
-        const minutesOptions = [200, 500, 1000];
+        const minutesOptions = [100, 200, 500, 1000];
         const planTypes      = Object.keys(PLAN_CONFIG);
 
         const quotes = {};
