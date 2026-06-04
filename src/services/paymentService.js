@@ -6,6 +6,7 @@ const { getPayPalAccessToken } = require("../config/paypal");
 const axios = require("axios");
 const logger = require("../helpers/logger"); // BetterStack logger
 const nodemailer = require("nodemailer");
+const Sequelize = require("sequelize");
 const { modifyBalanceService } = require("./modifyBalanceService");
 const admin = require('./../helpers/firebase')
 const db = admin.firestore();
@@ -29,6 +30,8 @@ const api = new WooCommerceRestApi({
     consumerSecret: "cs_42153016d7425aa4f139582800d97cd09db03823",
     version: "wc/v3"
 });
+
+const normalizeCallingCountry = (country) => String(country || "").trim().toLowerCase();
 
 
 
@@ -124,6 +127,7 @@ class PaymentService {
         paymentFor,
         startDate,
         endDate,
+        country,
     }) {
         console.log("Here is the device id ", device_id);
 
@@ -167,6 +171,7 @@ class PaymentService {
                 paymentFor,
                 startDate,
                 endDate,
+                country,
             },
         });
 
@@ -184,6 +189,7 @@ class PaymentService {
         paymentFor,
         startDate,
         endDate,
+        country,
     }) {
         const userRef = db.collection("app-registered-users").doc(userId);
         const userSnap = await userRef.get();
@@ -217,6 +223,7 @@ class PaymentService {
                 paymentFor,
                 startDate,
                 endDate,
+                country,
             },
         });
     }
@@ -1047,6 +1054,18 @@ class PaymentService {
 
         } catch (err) {
             console.log("❌ saveStripeCallingTransaction error", { error: err.message });
+            if (err.message && err.message.includes("No free calling numbers available")) {
+                await this.notifyCallingNumberUnavailableAfterPayment({
+                    provider: "stripe",
+                    transactionId: paymentIntent?.id,
+                    userId: paymentIntent?.metadata?.userId,
+                    amount: paymentIntent?.amount_received ? paymentIntent.amount_received / 100 : null,
+                    startDate: paymentIntent?.metadata?.startDate || null,
+                    endDate: paymentIntent?.metadata?.endDate || null,
+                    country: paymentIntent?.metadata?.country || null,
+                    errorMessage: err.message,
+                });
+            }
             await this.notifyAdminEmail("Stripe Calling Webhook Failure", err.message);
         }
     }
@@ -1143,6 +1162,41 @@ class PaymentService {
             await t.rollback();
             throw err;
         }
+    }
+
+    async checkCallingNumberStock(country) {
+        if (!country) {
+            throw new Error("country is required");
+        }
+
+        const normalizedCountry = normalizeCallingCountry(country);
+        const freeNumber = await CallNumber.findOne({
+            where: {
+                is_occupied: false,
+                [Sequelize.Op.and]: [
+                    Sequelize.where(
+                        Sequelize.fn("LOWER", Sequelize.col("country")),
+                        normalizedCountry
+                    ),
+                ],
+            },
+            attributes: ["id"],
+            order: [["id", "ASC"]],
+        });
+
+        if (!freeNumber) {
+            return {
+                available: false,
+                country,
+                message: `No free calling numbers available for ${country}. Please try again later.`,
+            };
+        }
+
+        return {
+            available: true,
+            country,
+            message: `Calling numbers are available for ${country}.`,
+        };
     }
 
 
@@ -1372,6 +1426,56 @@ class PaymentService {
         }
     }
 
+    async notifyCallingNumberUnavailableAfterPayment({
+        provider,
+        transactionId,
+        userId,
+        amount,
+        startDate,
+        endDate,
+        country,
+        errorMessage,
+    }) {
+        try {
+            const transporter = nodemailer.createTransport({
+                service: "gmail",
+                port: 587,
+                secure: false,
+                auth: {
+                    user: process.env.SMTP_USER || "your-email@gmail.com",
+                    pass: process.env.SMTP_PASS || "your-app-password",
+                },
+                tls: { rejectUnauthorized: false },
+            });
+
+            await transporter.sendMail({
+                from: '"SIMTLV System" <no-reply@simtlv.com>',
+                to: [
+                    "masshood@simtlv.co.il",
+                    "dor@simtlv.co.il",
+                    "ismail@simtlv.co.il",
+                    "rana@simtlv.co.il",
+                ],
+                subject: `Calling number unavailable after ${provider} payment`,
+                html: `
+      <h2>Calling Number Unavailable After Payment</h2>
+      <p>A user was charged, but no calling number was available to assign.</p>
+      <p><b>Provider:</b> ${provider}</p>
+      <p><b>Transaction ID:</b> ${transactionId || "N/A"}</p>
+      <p><b>User ID:</b> ${userId || "N/A"}</p>
+      <p><b>Amount:</b> ${amount == null ? "N/A" : amount} USD</p>
+      <p><b>Country:</b> ${country || "N/A"}</p>
+      <p><b>Start Date:</b> ${startDate || "N/A"}</p>
+      <p><b>End Date:</b> ${endDate || "N/A"}</p>
+      <p><b>Error:</b> ${errorMessage}</p>
+      <p><b>Timestamp:</b> ${new Date().toISOString()}</p>
+    `,
+            });
+        } catch (mailErr) {
+            console.log("❌ notifyCallingNumberUnavailableAfterPayment error", { error: mailErr.message });
+        }
+    }
+
     async createPayPalOrder({
         amount,
         currency,
@@ -1385,6 +1489,7 @@ class PaymentService {
         paymentFor,
         startDate,
         endDate,
+        country,
         paypalBaseUrl,
         paypalClientId,
         paypalSecret,
@@ -1411,6 +1516,7 @@ class PaymentService {
             paymentFor,
             startDate,
             endDate,
+            country,
         });
 
         const response = await axios.post(
@@ -1535,8 +1641,41 @@ class PaymentService {
             });
         } catch (err) {
             console.log("❌ savePayPalCallingTransaction error", { error: err.message });
+            if (err.message && err.message.includes("No free calling numbers available")) {
+                await this.notifyCallingNumberUnavailableAfterPayment({
+                    provider: "paypal",
+                    transactionId: data?.transactionId,
+                    userId: data?.metadata?.userId,
+                    amount: data?.amount ?? null,
+                    startDate: data?.metadata?.startDate || null,
+                    endDate: data?.metadata?.endDate || null,
+                    country: data?.metadata?.country || null,
+                    errorMessage: err.message,
+                });
+            }
             await this.notifyAdminEmail("PayPal Calling Webhook Failure", err.message);
         }
+    }
+
+    async triggerCallingNumberUnavailableDebugEmail({
+        provider = "debug",
+        transactionId = "DEBUG-TRANSACTION",
+        userId = "DEBUG-USER",
+        amount = null,
+        startDate = null,
+        endDate = null,
+        country = null,
+    }) {
+        await this.notifyCallingNumberUnavailableAfterPayment({
+            provider,
+            transactionId,
+            userId,
+            amount,
+            startDate,
+            endDate,
+            country,
+            errorMessage: "Debug trigger: simulate user charged but no calling number available.",
+        });
     }
 
     // Save PayPal Transaction (similar to Stripe)

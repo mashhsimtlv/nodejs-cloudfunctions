@@ -336,6 +336,43 @@ exports.getCallingCredentialsByUser = async (req, res) => {
     }
 };
 
+exports.checkCallingNumberAvailability = async (req, res) => {
+    try {
+        const country = req.query.country || req.body?.country;
+
+        if (!country) {
+            return res.status(400).json({ error: "country is required" });
+        }
+
+        const availability = await paymentService.checkCallingNumberStock(country);
+        if (!availability.available) {
+            return res.status(200).json({
+                available: false,
+                country,
+                message: availability.message,
+                code: "CALLING_NUMBER_UNAVAILABLE",
+            });
+        }
+
+        return res.status(200).json({
+            available: true,
+            country,
+            message: availability.message,
+        });
+    } catch (err) {
+        logger.error("Calling number availability check failed", { error: err.message });
+        if (err.message && err.message.includes("calling_numbers") && err.message.includes("doesn't exist")) {
+            return res.status(200).json({
+                available: false,
+                country: req.query.country || req.body?.country || null,
+                message: "Calling number stock table is not available in the current database.",
+                code: "CALLING_NUMBER_STOCK_TABLE_MISSING",
+            });
+        }
+        return res.status(500).json({ error: err.message });
+    }
+};
+
 
 
 exports.handlePayPalWebhookTest = async (req, res) => {

@@ -10,6 +10,7 @@ const subscriberRoutes = require("./routes/subscriberRoutes");
 const woocommerceRoutes = require("./routes/woocommerceRoutes");
 const pricingRoutes = require("./routes/pricingRoutes");
 const sequelize = require('./models').sequelize;
+const callingNumberExpiryService = require("./services/callingNumberExpiryService");
 
 require("dotenv").config();
 
@@ -35,7 +36,10 @@ app.set("io", io);
 app.use(cors());
 
 sequelize.authenticate()
-    .then(() => console.log('Database connected...'))
+    .then(() => {
+        console.log('Database connected...');
+        callingNumberExpiryService.start();
+    })
     .catch(err => console.log('Error: ' + err));
 
 app.use(bodyParser.json());
