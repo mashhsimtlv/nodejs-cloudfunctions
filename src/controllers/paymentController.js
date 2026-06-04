@@ -373,6 +373,38 @@ exports.checkCallingNumberAvailability = async (req, res) => {
     }
 };
 
+exports.debugCallingNumberUnavailableEmail = async (req, res) => {
+    try {
+        const {
+            provider = "debug",
+            transactionId = "DEBUG-TRANSACTION",
+            userId = "DEBUG-USER",
+            amount = null,
+            startDate = null,
+            endDate = null,
+            country = null,
+        } = req.body || {};
+
+        await paymentService.triggerCallingNumberUnavailableDebugEmail({
+            provider,
+            transactionId,
+            userId,
+            amount,
+            startDate,
+            endDate,
+            country,
+        });
+
+        return res.json({
+            success: true,
+            message: "Debug calling-number-unavailable email triggered.",
+        });
+    } catch (err) {
+        logger.error("Debug calling number unavailable email failed", { error: err.message });
+        return res.status(500).json({ error: err.message });
+    }
+};
+
 
 
 exports.handlePayPalWebhookTest = async (req, res) => {
