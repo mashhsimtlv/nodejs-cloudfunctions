@@ -1098,11 +1098,16 @@ class PaymentService {
     async assignCallingNumber({ userId, startTime, endTime, amount = 0 }) {
         const t = await sequelize.transaction();
         try {
-            // Check if user already has an active assignment
+            const now = new Date();
+
+            // Only treat a mapping as existing if it is still active.
             const existingMapping = await UserCallerNumber.findOne({
                 where: {
                     user_id: userId,
-                    // Check if assignment is still active (end_time is null or in the future)
+                    [Sequelize.Op.or]: [
+                        { end_time: null },
+                        { end_time: { [Sequelize.Op.gt]: now } },
+                    ],
                 },
                 include: [
                     {
@@ -1121,6 +1126,15 @@ class PaymentService {
                     { current_balance: newBalance },
                     { transaction: t }
                 );
+
+                // Self-heal bad data where an assigned number is still marked free.
+                if (existingMapping.callingNumber && !existingMapping.callingNumber.is_occupied) {
+                    await existingMapping.callingNumber.update(
+                        { is_occupied: true },
+                        { transaction: t }
+                    );
+                }
+
                 // Reload to get updated balance
                 await existingMapping.reload({ transaction: t });
                 await t.commit();
