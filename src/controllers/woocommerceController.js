@@ -302,7 +302,12 @@ exports.getAllConversation = async (req, res) => {
 
         await GooglePhoneOrder.create(payload);
 
-        const refCode = extractRefCode(body?.conversation?.firstIncomingMessage);
+        const messageText =
+            body?.message?.message?.text ??
+            body?.conversation?.firstIncomingMessage ??
+            null;
+
+        const refCode = extractRefCode(messageText);
 
         console.log(refCode, "ref code is found")
 
