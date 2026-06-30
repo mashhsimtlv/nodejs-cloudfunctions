@@ -111,7 +111,7 @@ class IccidService {
             });
 
             const apiStatus = response.data?.status;
-            if (apiStatus?.code === 11 || apiStatus?.msg === "Subscriber not found") {
+            if (allowToggle && (apiStatus?.code === 11 || apiStatus?.msg === "Subscriber not found")) {
                 let updatedUserData = null;
                 if(userData.existingUser === false){
                     updatedUserData = { ...userData, existingUser: true };
