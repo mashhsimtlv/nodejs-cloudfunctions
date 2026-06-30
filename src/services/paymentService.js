@@ -977,11 +977,11 @@ class PaymentService {
 
             console.log("Posting to n8n webhook:", payload);
 
-            // await axios.post(
-            //     "https://n8n-sys.simtlv.co.il/webhook/21731742-dd24-461c-8c42-9cfafb5064f7",
-            //     payload,
-            //     { headers: { "Content-Type": "application/json" } }
-            // );
+            await axios.post(
+                "https://n8n-sys.simtlv.co.il/webhook/21731742-dd24-461c-8c42-9cfafb5064f7",
+                payload,
+                { headers: { "Content-Type": "application/json" } }
+            );
 
 
             console.log("===== Stripe webhook ended =====");
