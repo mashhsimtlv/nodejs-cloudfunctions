@@ -9,6 +9,20 @@ const db = admin.firestore();
 const eventsAPI = require("./../services/events.service");
 const { sequelize, Transaction, CallNumber, UserCallerNumber, UnpaidTransaction } = require("../models"); // Sequelize models
 
+/**
+ * Safely parse PayPal custom_id (free-text field that may not be valid JSON).
+ * Returns {} instead of throwing on non-JSON / empty values.
+ */
+function safeJsonParse(value) {
+    if (!value || typeof value !== "string") return {};
+    try {
+        return JSON.parse(value);
+    } catch (err) {
+        console.warn("safeJsonParse: invalid JSON in custom_id:", value);
+        return {};
+    }
+}
+
 
 
 
@@ -434,7 +448,7 @@ exports.handlePayPalWebhookTest = async (req, res) => {
 
         if (testEvent.event_type === "PAYMENT.CAPTURE.COMPLETED") {
             const capture = event.resource;
-            const metadata = JSON.parse(capture.custom_id || "{}");
+            const metadata = safeJsonParse(capture.custom_id);
             const flowVersion = metadata.flowVersion || "v1"; // 👈 decide path
 
             if (flowVersion === "v3" && metadata.paymentFor === "calling") {
@@ -668,7 +682,7 @@ exports.handlePayPalWebhook = async (req, res) => {
 
         if (event.event_type === "PAYMENT.CAPTURE.COMPLETED") {
             const capture = event.resource;
-            const metadata = JSON.parse(capture.custom_id || "{}");
+            const metadata = safeJsonParse(capture.custom_id);
             const flowVersion = metadata.flowVersion || "v1"; // 👈 decide path
 
             if (flowVersion === "v3" && metadata.paymentFor === "calling") {
