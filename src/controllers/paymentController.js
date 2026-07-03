@@ -117,6 +117,99 @@ exports.createStripePaymentIntent = async (req, res) => {
     //     res.status(500).json({ error: err.message });
     // }
 };
+
+exports.createStripeMemberPaymentIntent = async (req, res) => {
+    // try {
+    const io = req.app.get("io");
+
+    console.log(req.body, "req body")
+
+    const ip =
+        req.headers["x-forwarded-for"]?.split(",")[0]?.trim() ||
+        req.socket?.remoteAddress ||
+        req.connection?.remoteAddress ||
+        null;
+
+    console.log("Client IP:", ip);
+
+
+    const { userId, productType, paymentType, planName, planId, device_id, paymentFor, country, minutes , member_uid } = req.body;
+
+    const amount = req.body.amount ? parseInt(req.body.amount) : 10;
+    //
+    // if (!amount || typeof amount !== "number") {
+    //     return res.status(400).json({ error: "Amount must be a valid number" });
+    // }
+
+    const intent = await paymentService.createStripeMemberPaymentIntent({
+        amount,
+        userId,
+        productType,
+        paymentType,
+        planName,
+        planId,
+        device_id,
+        ip,
+        paymentFor,
+        country,
+        minutes,
+        member_uid
+    });
+
+    // Save to UnpaidTransaction table
+    try {
+        const userRef = db.collection("app-registered-users").doc(userId);
+        const userSnap = await userRef.get();
+        const userData = userSnap.data();
+        const userEmail = userData?.email || "";
+
+        await UnpaidTransaction.create({
+            user_id: String(userId),
+            transaction_id: intent.id,
+            user_email: userEmail,
+            status: "unpaid",
+            page_source: req.body.page_source || paymentFor || productType || null,
+            amount: String(amount),
+        });
+        console.log("✅ [UnpaidTransaction] Saved record for intent:", intent.id);
+    } catch (saveErr) {
+        console.error("❌ [UnpaidTransaction] Failed to save record:", saveErr.message);
+    }
+
+    // await eventsAPI.paymentIntentCreated({
+    //     provider: "stripe",
+    //     clientSecret: intent.client_secret,
+    //     amount,
+    //     userId,
+    //     productType,
+    //     paymentType,
+    //     planName,
+    //     planId,
+    //     device_id,
+    // });
+
+
+
+
+    logger.info("Stripe payment intent created", {
+        userId,
+        amount,
+        productType,
+        paymentType,
+        clientSecret: intent.client_secret,
+    });
+
+    console.log(amount, "amount for intent")
+
+    res.json({ clientSecret: intent.client_secret });
+    // } catch (err) {
+    //     logger.error("Stripe payment intent failed", { error: err.message });
+    //     res.status(500).json({ error: err.message });
+    // }
+};
+
+
+
 exports.createStripeTestPaymentIntent = async (req, res) => {
     try {
         console.log(req.body, "req body");
@@ -580,6 +673,9 @@ exports.handleStripeWebhook = async (req, res) => {
             if (flowVersion === "v2") {
                 console.log("Processing via v2 flow");
                 await paymentService.saveStripeTransaction(paymentIntent, req.app.get("io"));
+            } else if (flowVersion === "v4") {
+                console.log("Processing via v4 flow");
+                await paymentService.saveMemberStripeTransaction(paymentIntent, req.app.get("io"));
             } else if (flowVersion === "v3" && paymentFor === "calling") {
                 console.log("Processing via v3 flow");
                 await paymentService.saveStripeCallingTransaction(paymentIntent, req.app.get("io"));
@@ -589,6 +685,8 @@ exports.handleStripeWebhook = async (req, res) => {
             }
         }
 
+
+        
         // You may also want to handle failed/canceled intents here:
         // if (event.type === "payment_intent.payment_failed") { ... }
 

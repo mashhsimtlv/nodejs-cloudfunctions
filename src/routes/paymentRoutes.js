@@ -3,6 +3,7 @@ const router = express.Router();
 const paymentController = require("../controllers/paymentController");
 
 router.post("/stripe/create-intent", paymentController.createStripePaymentIntent);
+router.post("/stripe/create-member-intent", paymentController.createStripeMemberPaymentIntent);
 router.post("/calling/create-intent", paymentController.createCallingPaymentIntent);
 router.post("/calling/paypal/create-order", paymentController.createCallingPayPalOrder);
 router.post("/calling/test/create-intent", paymentController.createCallingTestPaymentIntent);
