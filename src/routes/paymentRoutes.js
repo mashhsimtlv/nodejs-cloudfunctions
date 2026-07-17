@@ -3,6 +3,8 @@ const router = express.Router();
 const paymentController = require("../controllers/paymentController");
 
 router.post("/stripe/create-intent", paymentController.createStripePaymentIntent);
+router.post("/tranzila/create-intent", paymentController.createTranzilaPaymentIntent);
+router.post("/tranzila/notify", express.urlencoded({ extended: true }), paymentController.handleTranzilaNotify);
 router.post("/stripe/create-member-intent", paymentController.createStripeMemberPaymentIntent);
 router.post("/calling/create-intent", paymentController.createCallingPaymentIntent);
 router.post("/calling/paypal/create-order", paymentController.createCallingPayPalOrder);

@@ -1,3 +1,4 @@
+const crypto = require("crypto");
 const stripe = require("../config/stripe");
 const stripeTest = require("../config/streipe-test");
 const { Timestamp } = require("../config/db");
@@ -14,7 +15,7 @@ const iccidService = require("../services/iccidService");
 const subscriberService = require("../services/subscriberService");
 const { getMainToken, getToken } = require("../helpers/generalSettings");
 const { models } = require("../models"); // Sequelize models
-const { sequelize, Transaction, UnpaidUser, CallNumber, UserCallerNumber, User, FamilyMember } = require("../models");
+const { sequelize, Transaction, UnpaidUser, CallNumber, UserCallerNumber, User, FamilyMember, BlockedEmail } = require("../models");
 // const User = models.User || models.user; // optional MySQL/Mongo user model
 const ExcelJS = require("exceljs");
 
@@ -113,6 +114,170 @@ class PaymentService {
                 minutes,
             },
         });
+    }
+
+    /**
+     * Create a Tranzila "payment intent" (hosted iframe flow, v2).
+     * Mirrors createStripePaymentIntent: same inputs/metadata, but instead of a
+     * Stripe clientSecret it returns the hosted-page iframe URL. Card data is
+     * entered on Tranzila's page — this server never touches PAN/CVV.
+     * Metadata is stored in Firestore and re-read by handleTranzilaNotify.
+     */
+    async createTranzilaPaymentIntent({
+        amount,
+        userId,
+        productType,
+        paymentType,
+        planName,
+        planId,
+        device_id,
+        ip,
+        paymentFor,
+        startDate,
+        endDate,
+        country,
+        minutes,
+        successUrl,
+        failUrl,
+    }) {
+        console.log("Here is the device id ", device_id);
+
+        const userRef = db.collection("app-registered-users").doc(userId);
+        const userSnap = await userRef.get();
+        const user = userSnap.data();
+        if (!user) {
+            throw new Error("User not found");
+        }
+
+        const email = user.email || "";
+        console.log("Fetched user:", { userId, email });
+
+        // ✅ Block emails from the blocked_emails table (seed/update via: node src/seeders/seedBlockedEmails.js)
+        try {
+            const blockedRows = await BlockedEmail.findAll({ attributes: ["pattern"] });
+            const lowerEmail = email.toLowerCase();
+            if (blockedRows.some((row) => lowerEmail.includes(String(row.pattern).toLowerCase()))) {
+                console.log("Blocked payment intent for blocked email:", email);
+                return { blocked: true, message: "Payments are not allowed for this email domain." };
+            }
+        } catch (blockErr) {
+            // fail-open so a lookup error doesn't break payments
+            console.error("❌ Blocked email lookup failed:", blockErr.message);
+        }
+
+        console.log(amount, "tranzila payment");
+
+        const paymentId = `tz_${Date.now()}_${crypto.randomBytes(6).toString("hex")}`;
+        const createdAt = new Date();
+
+        // Same metadata Stripe carries in the PaymentIntent — Tranzila can't hold
+        // it, so it lives in Firestore keyed by paymentId until the notify webhook.
+        const metadata = {
+            userId,
+            productType: productType || null,
+            paymentType: paymentType || null,
+            planName: planName || null,
+            planId: planId || null,
+            flowVersion: "v2",
+            device_id: device_id || null,
+            ip: ip || null,
+            paymentFor: paymentFor || null,
+            startDate: startDate || null,
+            endDate: endDate || null,
+            country: country || null,
+            minutes: minutes || null,
+            provider: "tranzila",
+        };
+
+        await db.collection("tranzila-payment-intents").doc(paymentId).set({
+            ...metadata,
+            amount, // cents, same unit the Stripe flow uses
+            status: "pending",
+            createdAt,
+        });
+
+        const terminal = process.env.TRANZILA_TERMINAL;
+        const base = process.env.PUBLIC_BASE_URL || "https://cloudapi.simtlv.co.il";
+        const params = new URLSearchParams({
+            sum: (amount / 100).toFixed(2), // Tranzila wants currency units, not cents
+            currency: process.env.TRANZILA_CURRENCY || "2", // 2 = USD (v2 flow credits USD), 1 = ILS
+            cred_type: "1",
+            tranmode: "A",
+            pdesc: `SIMTLV ${productType || paymentFor || "payment"}`,
+            payment_id: paymentId, // echoed back in the notify callback
+            // Browser redirects only — status is decided by the notify webhook, never by these
+            success_url_address: successUrl || process.env.TRANZILA_SUCCESS_URL || `${base}/payment-result?id=${paymentId}`,
+            fail_url_address: failUrl || process.env.TRANZILA_FAIL_URL || `${base}/payment-result?id=${paymentId}`,
+            notify_url_address: `${base}/api/payments/tranzila/notify`,
+            u71: "1",
+            lang: "us",
+            nologo: "1",
+            hidesum: "1",
+            trBgColor: "f8fafc",
+            trTextColor: "1f2937",
+        });
+
+        return {
+            id: paymentId,
+            iframeUrl: `https://direct.tranzila.com/${terminal}/iframenew.php?${params.toString()}`,
+        };
+    }
+
+    /**
+     * Handle Tranzila server-to-server notify (IPN). This is the ONLY place a
+     * Tranzila payment is marked approved/failed. On approval it feeds a
+     * synthetic paymentIntent into the same v2 pipeline as Stripe.
+     */
+    async handleTranzilaNotify(params, io) {
+        const paymentId = params.payment_id;
+        const responseCode = params.Response ?? params.response;
+        const approved = responseCode === "000";
+
+        if (!paymentId) {
+            return { ok: false, status: 400, message: "missing payment_id" };
+        }
+
+        const intentRef = db.collection("tranzila-payment-intents").doc(paymentId);
+        const intentSnap = await intentRef.get();
+        if (!intentSnap.exists) {
+            console.warn("[TRANZILA NOTIFY] unknown payment_id:", paymentId);
+            return { ok: false, status: 404, message: "unknown payment" };
+        }
+
+        const intent = intentSnap.data();
+        if (intent.status !== "pending") {
+            console.log("[TRANZILA NOTIFY] duplicate notify ignored:", paymentId, intent.status);
+            return { ok: true, status: 200, message: "already processed" };
+        }
+
+        await intentRef.update({
+            status: approved ? "approved" : "failed",
+            responseCode: responseCode || null,
+            tranzilaTid: params.TranzilaTID ?? params.index ?? null,
+            confirmationCode: params.ConfirmationCode ?? params.confirmation_code ?? null,
+            notifyPayload: params,
+            processedAt: new Date(),
+        });
+
+        if (!approved) {
+            console.log("[TRANZILA NOTIFY] payment failed:", paymentId, "code:", responseCode);
+            return { ok: true, status: 200, message: "failure recorded" };
+        }
+
+        const { amount, status, createdAt, notifyPayload, processedAt, ...metadata } = intent;
+
+        // Same shape saveStripeTransaction expects from a Stripe webhook
+        const paymentIntent = {
+            id: paymentId,
+            amount_received: amount, // cents, trusted from our stored intent — not the callback
+            created: Math.floor((createdAt?.toDate ? createdAt.toDate() : new Date()).getTime() / 1000),
+            metadata,
+        };
+
+        console.log("[TRANZILA NOTIFY] processing via v2 flow:", paymentId);
+        await this.saveStripeTransaction(paymentIntent, io);
+
+        return { ok: true, status: 200, message: "OK" };
     }
 
     async createStripeMemberPaymentIntent({
@@ -362,8 +527,9 @@ class PaymentService {
             const amountUSD = amount_received / 100;
             const paymentType = metadata.paymentType || "unknown";
             const productType = metadata.productType || "unknown";
+            const provider = metadata.provider || "stripe"; // "tranzila" when fed by handleTranzilaNotify
 
-            console.log("Step 1 → Extracted metadata:", { userId, subscriberId, amountUSD, paymentType, productType });
+            console.log("Step 1 → Extracted metadata:", { userId, subscriberId, amountUSD, paymentType, productType, provider });
 
 
             const [result, createdRow] = await Transaction.findOrCreate({
@@ -372,7 +538,7 @@ class PaymentService {
                     user_id: userId,
                     transaction_id: id,
                     amount: amountUSD,
-                    provider: "stripe",
+                    provider,
                     product_type: productType,
                     payment_type: paymentType,
                     createdAt: new Date(created * 1000),
@@ -616,7 +782,7 @@ class PaymentService {
                         transactionId: id,
                         transactionTime: new Date(created * 1000),
                         isUsed: true,
-                        provider: "stripe",
+                        provider,
                         productType: planCode,
                         paymentType,
                     });
@@ -655,7 +821,7 @@ class PaymentService {
 
 
                 this.delayedEmit(io, "payment_event_" + user.uid, {
-                    provider: "stripe",
+                    provider,
                     type: "payment_intent.succeeded",
                     iccid: iccidGiga,
                     data: emitPayload
@@ -664,7 +830,7 @@ class PaymentService {
 
                 const payload = {
                     totalPaymentValue: paymentIntent.amount_received / 100, // USD → integer
-                    paymentMethod: "stripe",
+                    paymentMethod: provider,
                     userUid: user.uid || "unknown",
                     firstName: user.firstName || "",
                     lastName: user.lastName || "",
@@ -672,7 +838,7 @@ class PaymentService {
                     transactionId: paymentIntent.id,
                     invoiceName: paymentIntent.metadata.invoiceName || "",
                     product: paymentIntent.metadata.productType || "unknown",
-                    paymentType: paymentIntent.metadata.paymentType || "stripe",
+                    paymentType: paymentIntent.metadata.paymentType || provider,
                 };
 
                 console.log("Posting to n8n webhook:", payload);
@@ -993,7 +1159,7 @@ class PaymentService {
                 transactionId: id,
                 transactionTime: new Date(created * 1000),
                 isUsed: true,
-                provider: "stripe",
+                provider,
                 productType,
                 paymentType,
             });
@@ -1041,7 +1207,7 @@ class PaymentService {
 
             const payload = {
                 totalPaymentValue: paymentIntent.amount_received / 100, // USD → integer
-                paymentMethod: "stripe",
+                paymentMethod: provider,
                 userUid: user.uid || "unknown",
                 firstName: user.firstName || "",
                 lastName: user.lastName || "",
@@ -1049,7 +1215,7 @@ class PaymentService {
                 transactionId: paymentIntent.id,
                 invoiceName: paymentIntent.metadata.invoiceName || "",
                 product: paymentIntent.metadata.productType || "unknown",
-                paymentType: paymentIntent.metadata.paymentType || "stripe",
+                paymentType: paymentIntent.metadata.paymentType || provider,
             };
 
             console.log("Posting to n8n webhook:", payload);

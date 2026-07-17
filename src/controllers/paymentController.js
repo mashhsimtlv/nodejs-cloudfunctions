@@ -118,6 +118,101 @@ exports.createStripePaymentIntent = async (req, res) => {
     // }
 };
 
+/**
+ * Create a Tranzila Payment Intent (hosted iframe, v2 flow)
+ * Same data/flow as createStripePaymentIntent — returns an iframeUrl
+ * instead of a Stripe clientSecret.
+ */
+exports.createTranzilaPaymentIntent = async (req, res) => {
+    console.log(req.body, "req body");
+
+    const ip =
+        req.headers["x-forwarded-for"]?.split(",")[0]?.trim() ||
+        req.socket?.remoteAddress ||
+        req.connection?.remoteAddress ||
+        null;
+
+    console.log("Client IP:", ip);
+
+    const { userId, productType, paymentType, planName, planId, device_id, paymentFor, country, minutes, success_url, fail_url } = req.body;
+
+    const amount = req.body.amount ? parseInt(req.body.amount) : 10;
+
+    const intent = await paymentService.createTranzilaPaymentIntent({
+        amount,
+        userId,
+        productType,
+        paymentType,
+        planName,
+        planId,
+        device_id,
+        ip,
+        paymentFor,
+        country,
+        minutes,
+        successUrl: success_url,
+        failUrl: fail_url,
+    });
+
+    if (intent.blocked) {
+        return res.status(403).json({ error: intent.message });
+    }
+
+    // Save to UnpaidTransaction table
+    try {
+        const userRef = db.collection("app-registered-users").doc(userId);
+        const userSnap = await userRef.get();
+        const userData = userSnap.data();
+        const userEmail = userData?.email || "";
+
+        await UnpaidTransaction.create({
+            user_id: String(userId),
+            transaction_id: intent.id,
+            user_email: userEmail,
+            status: "unpaid",
+            page_source: req.body.page_source || paymentFor || productType || null,
+            amount: String(amount),
+        });
+        console.log("✅ [UnpaidTransaction] Saved record for intent:", intent.id);
+    } catch (saveErr) {
+        console.error("❌ [UnpaidTransaction] Failed to save record:", saveErr.message);
+    }
+
+    logger.info("Tranzila payment intent created", {
+        userId,
+        amount,
+        productType,
+        paymentType,
+        paymentId: intent.id,
+    });
+
+    console.log(amount, "amount for intent");
+
+    res.json({ paymentId: intent.id, iframeUrl: intent.iframeUrl });
+};
+
+/**
+ * Tranzila server-to-server notify (IPN) — form-encoded POST.
+ * The ONLY place a Tranzila payment is confirmed; on approval the
+ * transaction goes through the same v2 pipeline as the Stripe webhook.
+ */
+exports.handleTranzilaNotify = async (req, res) => {
+    console.log("[TRANZILA NOTIFY] hit from", req.headers["x-forwarded-for"] || req.socket?.remoteAddress || "unknown ip");
+
+    // notify arrives form-encoded; fall back to query params just in case
+    const params = { ...req.query, ...(req.body || {}) };
+    console.log("[TRANZILA NOTIFY] payload:", JSON.stringify(params));
+
+    try {
+        const result = await paymentService.handleTranzilaNotify(params, req.app.get("io"));
+        return res.status(result.status).send(result.message);
+    } catch (err) {
+        console.error("❌ Tranzila notify processing failed:", err.message);
+        logger.error("Tranzila notify failed", { error: err.message });
+        return res.status(500).send(`Notify handler failed: ${err.message}`);
+    }
+};
+
 exports.createStripeMemberPaymentIntent = async (req, res) => {
     // try {
     const io = req.app.get("io");
