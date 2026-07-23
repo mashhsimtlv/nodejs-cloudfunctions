@@ -1294,24 +1294,71 @@ class PaymentService {
             let user = payerUser;      // downstream SIM-side beneficiary defaults to payer
             let memberIccid = null;
             if (memberUid) {
+                let familyMember = null;
                 try {
-                    const familyMember = await FamilyMember.findOne({
+                    familyMember = await FamilyMember.findOne({
                         where: { parent_uid: payerId, member_uid: memberUid },
                     });
-                    memberIccid = familyMember?.iccid || null;
-                    console.log("v4: family member lookup", { memberUid, memberIccid });
                 } catch (fmErr) {
                     console.log("v4: family member lookup failed", { error: fmErr.message });
                 }
 
-                const memberSnap = await db.collection("app-registered-users").doc(memberUid).get();
+                // The Flutter app creates the member's Firebase account itself, before this
+                // payment, so this is often the FIRST time we see this member_uid — no
+                // family_members row links it yet. Create it now so the link (and CRM
+                // visibility) exists going forward, instead of leaving member_uid unset
+                // forever. Note: if this member was ALSO added manually via the CRM earlier
+                // (a family_members row with member_uid still NULL), that older row is a
+                // separate key and isn't matched/merged here — this only covers the common
+                // "Flutter creates + pays" path.
+                if (!familyMember) {
+                    try {
+                        const [row] = await FamilyMember.findOrCreate({
+                            where: { parent_uid: payerId, member_uid: memberUid },
+                            defaults: { parent_uid: payerId, member_uid: memberUid, added_by: "parent" },
+                        });
+                        familyMember = row;
+                        console.log("v4: created family_members link", { payerId, memberUid, linkId: row.id });
+                    } catch (linkErr) {
+                        console.log("v4: failed to create family_members link", { error: linkErr.message });
+                    }
+                }
+                memberIccid = familyMember?.iccid || null;
+                console.log("v4: family member lookup", { memberUid, memberIccid });
+
+                let memberSnap = await db.collection("app-registered-users").doc(memberUid).get();
+
+                if (!memberSnap.exists) {
+                    // Account exists in Firebase Auth (Flutter created it) but its Firestore
+                    // profile doc doesn't yet — seed a minimal one so this member can actually
+                    // be credited, instead of silently falling back to the payer below.
+                    try {
+                        const authUser = await admin.auth().getUser(memberUid);
+                        await db.collection("app-registered-users").doc(memberUid).set(
+                            {
+                                uid: memberUid,
+                                email: authUser.email || null,
+                                isActive: false,
+                                tier: "silver",
+                                balance: 0,
+                                ...(memberIccid ? { iccid: memberIccid } : {}),
+                            },
+                            { merge: true }
+                        );
+                        memberSnap = await db.collection("app-registered-users").doc(memberUid).get();
+                        console.log("v4: seeded missing member profile doc", { memberUid });
+                    } catch (seedErr) {
+                        console.log("v4: failed to seed member profile doc", { memberUid, error: seedErr.message });
+                    }
+                }
+
                 if (memberSnap.exists) {
                     user = memberSnap.data();
                     beneficiaryId = memberUid;
                     // ICCID from family_members wins; else fall back to the member's own iccid
                     if (memberIccid) user.iccid = memberIccid;
                 } else {
-                    console.log("v4: member user doc not found, crediting payer", { memberUid });
+                    console.log("v4: member user doc not found and couldn't be seeded, crediting payer", { memberUid });
                     // still target the member SIM if we know the iccid
                     if (memberIccid) user = { ...payerUser, iccid: memberIccid };
                 }
