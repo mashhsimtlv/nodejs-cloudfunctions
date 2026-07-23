@@ -228,7 +228,11 @@ exports.createStripeMemberPaymentIntent = async (req, res) => {
     console.log("Client IP:", ip);
 
 
-    const { userId, productType, paymentType, planName, planId, device_id, paymentFor, country, minutes , member_uid } = req.body;
+    // family_member_id identifies a manual/unregistered family member (added via the CRM's
+    // POST /members with no account yet — member_uid is null until they register). It's the
+    // only stable id we have for them until then, so it rides along as an alternative to
+    // member_uid so the Stripe webhook can still resolve which SIM to credit.
+    const { userId, productType, paymentType, planName, planId, device_id, paymentFor, country, minutes , member_uid, family_member_id } = req.body;
 
     const amount = req.body.amount ? parseInt(req.body.amount) : 10;
     //
@@ -248,7 +252,8 @@ exports.createStripeMemberPaymentIntent = async (req, res) => {
         paymentFor,
         country,
         minutes,
-        member_uid
+        member_uid,
+        family_member_id
     });
 
     // Save to UnpaidTransaction table

@@ -294,7 +294,8 @@ class PaymentService {
         endDate,
         country,
         minutes,
-        member_uid
+        member_uid,
+        family_member_id
     }) {
         console.log("Here is the device id ", device_id);
 
@@ -353,6 +354,7 @@ class PaymentService {
                 country,
                 minutes,
                 member_uid,
+                family_member_id,
             },
         });
     }
@@ -1245,7 +1247,12 @@ class PaymentService {
             // ------------------- STEP 1: Extract metadata and validate duplicate -------------------
             const { metadata, id, amount_received, created } = paymentIntent;
             const payerId = metadata.userId;               // main user who paid
-            const memberUid = metadata.member_uid || null; // beneficiary member
+            const memberUid = metadata.member_uid || null; // beneficiary member (once registered)
+            // Manual/unregistered members (added via CRM POST /members) have no member_uid yet —
+            // this is the family_members row id, the only stable id we have for them until they
+            // register. Either or both may be present; family_member_id is preferred when set
+            // since it also covers members who never get a Firebase account at all.
+            const familyMemberId = metadata.family_member_id || null;
             const device_id = metadata?.device_id || null;
             const ip = metadata?.ip || null;
             const amountUSD = amount_received / 100;
@@ -1293,12 +1300,20 @@ class PaymentService {
             let beneficiaryId = payerId;
             let user = payerUser;      // downstream SIM-side beneficiary defaults to payer
             let memberIccid = null;
-            if (memberUid) {
+            if (memberUid || familyMemberId) {
                 let familyMember = null;
                 try {
-                    familyMember = await FamilyMember.findOne({
-                        where: { parent_uid: payerId, member_uid: memberUid },
-                    });
+                    if (familyMemberId) {
+                        // Scoped to parent_uid so one parent can't pull balance onto a member
+                        // linked under a different parent by guessing/replaying an id.
+                        familyMember = await FamilyMember.findOne({
+                            where: { id: familyMemberId, parent_uid: payerId },
+                        });
+                    } else {
+                        familyMember = await FamilyMember.findOne({
+                            where: { parent_uid: payerId, member_uid: memberUid },
+                        });
+                    }
                 } catch (fmErr) {
                     console.log("v4: family member lookup failed", { error: fmErr.message });
                 }
@@ -1307,11 +1322,9 @@ class PaymentService {
                 // payment, so this is often the FIRST time we see this member_uid — no
                 // family_members row links it yet. Create it now so the link (and CRM
                 // visibility) exists going forward, instead of leaving member_uid unset
-                // forever. Note: if this member was ALSO added manually via the CRM earlier
-                // (a family_members row with member_uid still NULL), that older row is a
-                // separate key and isn't matched/merged here — this only covers the common
-                // "Flutter creates + pays" path.
-                if (!familyMember) {
+                // forever. Only applies to the member_uid path — a family_member_id that
+                // doesn't resolve is a bad/stale id, not something to fabricate a row for.
+                if (!familyMember && memberUid && !familyMemberId) {
                     try {
                         const [row] = await FamilyMember.findOrCreate({
                             where: { parent_uid: payerId, member_uid: memberUid },
@@ -1323,48 +1336,88 @@ class PaymentService {
                         console.log("v4: failed to create family_members link", { error: linkErr.message });
                     }
                 }
-                memberIccid = familyMember?.iccid || null;
-                console.log("v4: family member lookup", { memberUid, memberIccid });
 
-                let memberSnap = await db.collection("app-registered-users").doc(memberUid).get();
+                // Resolved uid: an explicit member_uid wins; otherwise use whatever the row
+                // already has on file (set once the manual member eventually registers).
+                let resolvedMemberUid = memberUid || familyMember?.member_uid || null;
 
-                if (!memberSnap.exists) {
-                    // Account exists in Firebase Auth (Flutter created it) but its Firestore
-                    // profile doc doesn't yet — seed a minimal one so this member can actually
-                    // be credited, instead of silently falling back to the payer below.
+                // Manual member just paid for via family_member_id, and this is the first time
+                // we see a real uid for them (memberUid passed alongside, or set since) —
+                // backfill it onto the row so it's linked/visible in the CRM going forward.
+                if (familyMember && resolvedMemberUid && !familyMember.member_uid) {
                     try {
-                        const authUser = await admin.auth().getUser(memberUid);
-                        await db.collection("app-registered-users").doc(memberUid).set(
-                            {
-                                uid: memberUid,
-                                email: authUser.email || null,
-                                isActive: false,
-                                tier: "silver",
-                                balance: 0,
-                                ...(memberIccid ? { iccid: memberIccid } : {}),
-                            },
-                            { merge: true }
-                        );
-                        memberSnap = await db.collection("app-registered-users").doc(memberUid).get();
-                        console.log("v4: seeded missing member profile doc", { memberUid });
-                    } catch (seedErr) {
-                        console.log("v4: failed to seed member profile doc", { memberUid, error: seedErr.message });
+                        await familyMember.update({ member_uid: resolvedMemberUid });
+                        console.log("v4: backfilled member_uid onto family link", { linkId: familyMember.id, resolvedMemberUid });
+                    } catch (updateErr) {
+                        console.log("v4: failed to backfill member_uid", { error: updateErr.message });
                     }
                 }
 
-                if (memberSnap.exists) {
-                    user = memberSnap.data();
-                    beneficiaryId = memberUid;
-                    // ICCID from family_members wins; else fall back to the member's own iccid
-                    if (memberIccid) user.iccid = memberIccid;
+                memberIccid = familyMember?.iccid || null;
+                console.log("v4: family member resolved", { familyMemberId, memberUid: resolvedMemberUid, memberIccid, linkId: familyMember?.id });
+
+                if (resolvedMemberUid) {
+                    let memberSnap = await db.collection("app-registered-users").doc(resolvedMemberUid).get();
+
+                    if (!memberSnap.exists) {
+                        // Account exists in Firebase Auth (Flutter created it) but its Firestore
+                        // profile doc doesn't yet — seed a minimal one so this member can actually
+                        // be credited, instead of silently falling back to the payer below.
+                        try {
+                            const authUser = await admin.auth().getUser(resolvedMemberUid);
+                            await db.collection("app-registered-users").doc(resolvedMemberUid).set(
+                                {
+                                    uid: resolvedMemberUid,
+                                    email: authUser.email || null,
+                                    isActive: false,
+                                    tier: "silver",
+                                    balance: 0,
+                                    ...(memberIccid ? { iccid: memberIccid } : {}),
+                                },
+                                { merge: true }
+                            );
+                            memberSnap = await db.collection("app-registered-users").doc(resolvedMemberUid).get();
+                            console.log("v4: seeded missing member profile doc", { resolvedMemberUid });
+                        } catch (seedErr) {
+                            console.log("v4: failed to seed member profile doc", { resolvedMemberUid, error: seedErr.message });
+                        }
+                    }
+
+                    if (memberSnap.exists) {
+                        user = memberSnap.data();
+                        beneficiaryId = resolvedMemberUid;
+                        // ICCID from family_members wins; else fall back to the member's own iccid
+                        if (memberIccid) user.iccid = memberIccid;
+                    } else {
+                        console.log("v4: member user doc not found and couldn't be seeded, crediting payer", { resolvedMemberUid });
+                        if (memberIccid) user = { ...payerUser, iccid: memberIccid };
+                    }
+                } else if (memberIccid) {
+                    // Still fully manual — no Firebase account, and per the CRM this person will
+                    // never log into the app (they're a SIM handed to a family member, not an app
+                    // user). Give them their own stable id derived from the family_members row
+                    // (not a Firebase uid — nothing to collide with) so their credit is tracked as
+                    // THEIRS, not folded into the payer's identity/tier/referral/coupon state.
+                    beneficiaryId = `manual-fm-${familyMember.id}`;
+                    user = {
+                        uid: beneficiaryId,
+                        iccid: memberIccid,
+                        tier: "silver",     // baseline — not the payer's tier
+                        existingUser: true, // iccid was already provisioned when the CRM added them
+                        isActive: true,     // skip ICCID activation — it's already live
+                    };
+                    console.log("v4: manual member has no account and never logs in — crediting their iccid under its own id", { familyMemberId, beneficiaryId, memberIccid });
                 } else {
-                    console.log("v4: member user doc not found and couldn't be seeded, crediting payer", { memberUid });
-                    // still target the member SIM if we know the iccid
-                    if (memberIccid) user = { ...payerUser, iccid: memberIccid };
+                    console.log("v4: could not resolve a family member or iccid, crediting payer", { familyMemberId, memberUid });
                 }
             }
             user.uid = user.uid || beneficiaryId;
             const userId = beneficiaryId; // SIM balance / package / history / miles → member
+            // A manual member's synthetic id has no Firestore doc (they never log in), so the
+            // app-side wallet/miles/history steps below are skipped for them — only the OCS SIM
+            // balance and the audit transaction record apply. Real accounts (payer or a
+            // registered member) go through those steps as before.
+            const hasAppAccount = !userId.startsWith("manual-fm-");
             const referredBy = user.referredBy || null;
             console.log("Step 2 → beneficiary resolved:", { beneficiaryId, iccid: user.iccid, tier: user.tier });
 
@@ -1463,18 +1516,23 @@ class PaymentService {
                     await this.affectPackage(iccidGiga, plan, user, paymentIntent);
                     console.log("GigaBoost package applied to member", { iccidGiga });
 
-                    await this.addHistory(userId, {
-                        amount: usdAmount,
-                        bonus: 0,
-                        currentBonus: null,
-                        dateTime: new Date().toISOString(),
-                        isPayAsyouGo: true,
-                        isTopup: false,
-                        paymentType,
-                        planName: plan.plan_name,
-                        referredBy: "",
-                        type: "GigaBoost Purchase",
-                    });
+                    // A manual family member has no Firestore doc to write history onto — see
+                    // hasAppAccount above. Their transaction record below is still recorded and
+                    // tagged with their unique id, so the purchase is fully auditable.
+                    if (hasAppAccount) {
+                        await this.addHistory(userId, {
+                            amount: usdAmount,
+                            bonus: 0,
+                            currentBonus: null,
+                            dateTime: new Date().toISOString(),
+                            isPayAsyouGo: true,
+                            isTopup: false,
+                            paymentType,
+                            planName: plan.plan_name,
+                            referredBy: "",
+                            type: "GigaBoost Purchase",
+                        });
+                    }
 
                     // Transaction record kept under payer
                     await db.collection("transactions").add({
@@ -1674,33 +1732,39 @@ class PaymentService {
                 await this.addSimtlvBalance(iccid, user, euroAmount, io, simtlvToken, "completed");
             }
 
-            // ------------------- STEP 9: Update Miles & Tier (member) -------------------
-            const milesValue =
-                user.tier === "VIP" ? 8 : user.tier === "Diamond" ? 7 : user.tier === "Gold" ? 6 : 5;
-            const milesToAdd = usdAmount * milesValue;
-            await this.updateMilesAndTier(userId, milesToAdd);
+            // ------------------- STEP 9-11: Wallet-side bookkeeping (member) -------------------
+            // A manual family member (no account, never logs into the app) has no Firestore doc
+            // to hold miles/tier/wallet-balance/history — see hasAppAccount above. Their money
+            // already landed on the right SIM via STEP 8; the transaction record in STEP 12,
+            // tagged with their unique id, is their audit trail.
+            if (hasAppAccount) {
+                const milesValue =
+                    user.tier === "VIP" ? 8 : user.tier === "Diamond" ? 7 : user.tier === "Gold" ? 6 : 5;
+                const milesToAdd = usdAmount * milesValue;
+                await this.updateMilesAndTier(userId, milesToAdd);
 
-            // ------------------- STEP 10: Update MEMBER wallet balance -------------------
-            await db.collection("app-registered-users").doc(userId).update({
-                balance: admin.firestore.FieldValue.increment(usdAmount),
-            });
-            await db.collection("app-registered-users").doc(userId).update({
-                balance: admin.firestore.FieldValue.increment(bonusBalance),
-            });
+                await db.collection("app-registered-users").doc(userId).update({
+                    balance: admin.firestore.FieldValue.increment(usdAmount),
+                });
+                await db.collection("app-registered-users").doc(userId).update({
+                    balance: admin.firestore.FieldValue.increment(bonusBalance),
+                });
 
-            // ------------------- STEP 11: Add History (member) -------------------
-            await this.addHistory(userId, {
-                amount: baseAmount,
-                bonus: bonusBalance,
-                currentBonus: null,
-                dateTime: new Date().toISOString(),
-                isPayAsyouGo: true,
-                isTopup: true,
-                paymentType,
-                planName: null,
-                referredBy: "",
-                type: "TopUp",
-            });
+                await this.addHistory(userId, {
+                    amount: baseAmount,
+                    bonus: bonusBalance,
+                    currentBonus: null,
+                    dateTime: new Date().toISOString(),
+                    isPayAsyouGo: true,
+                    isTopup: true,
+                    paymentType,
+                    planName: null,
+                    referredBy: "",
+                    type: "TopUp",
+                });
+            } else {
+                console.log("v4: skipping wallet/miles/history for manual member with no app account", { userId });
+            }
 
             // ------------------- STEP 12: Save Transaction (under payer) -------------------
             await db.collection("transactions").add({
