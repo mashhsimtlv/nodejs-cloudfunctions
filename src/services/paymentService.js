@@ -14,6 +14,7 @@ const db = admin.firestore();
 const iccidService = require("../services/iccidService");
 const subscriberService = require("../services/subscriberService");
 const { getMainToken, getToken } = require("../helpers/generalSettings");
+const { manualMemberId, isPlaceholderUid } = require("../helpers/familyMembers");
 const { models } = require("../models"); // Sequelize models
 const { sequelize, Transaction, UnpaidUser, CallNumber, UserCallerNumber, User, FamilyMember, BlockedEmail } = require("../models");
 // const User = models.User || models.user; // optional MySQL/Mongo user model
@@ -33,8 +34,6 @@ const api = new WooCommerceRestApi({
 });
 
 const normalizeCallingCountry = (country) => String(country || "").trim().toLowerCase();
-
-
 
 class PaymentService {
     /**
@@ -280,6 +279,46 @@ class PaymentService {
         return { ok: true, status: 200, message: "OK" };
     }
 
+    /**
+     * Find the family_members row this payment is for.
+     * The caller may know the member by row id, by their Firebase uid, or (CRM-added manual
+     * members) only by name — all three are scoped to the paying parent so one parent can never
+     * pull a payment onto a member linked under someone else.
+     */
+    async resolveFamilyMember({ parentUid, memberUid, familyMemberId, memberName }) {
+        if (!parentUid) return null;
+        try {
+            if (familyMemberId) {
+                const byId = await FamilyMember.findOne({
+                    where: { id: familyMemberId, parent_uid: parentUid },
+                });
+                if (byId) return byId;
+                console.log("resolveFamilyMember: no row for id under this parent", { familyMemberId, parentUid });
+            }
+
+            if (memberUid) {
+                const byUid = await FamilyMember.findOne({
+                    where: { parent_uid: parentUid, member_uid: memberUid },
+                });
+                if (byUid) return byUid;
+            }
+
+            if (memberName) {
+                // Names aren't unique by schema, but they are how the CRM lists manual members.
+                // Newest first: if a parent really has two members with the same name, the one
+                // they just added is the one they're paying for.
+                const byName = await FamilyMember.findOne({
+                    where: { parent_uid: parentUid, name: String(memberName).trim() },
+                    order: [["id", "DESC"]],
+                });
+                if (byName) return byName;
+            }
+        } catch (err) {
+            console.log("resolveFamilyMember failed", { error: err.message, parentUid, familyMemberId, memberUid, memberName });
+        }
+        return null;
+    }
+
     async createStripeMemberPaymentIntent({
         amount,
         userId,
@@ -295,7 +334,8 @@ class PaymentService {
         country,
         minutes,
         member_uid,
-        family_member_id
+        family_member_id,
+        member_name,
     }) {
         console.log("Here is the device id ", device_id);
 
@@ -333,6 +373,37 @@ class PaymentService {
 
         console.log(amount, "stripe payment")
 
+        // Resolve the beneficiary NOW rather than in the webhook: the caller may only know the
+        // member's name, and if they can't be matched we must not take the money at all (the
+        // webhook would fall back to crediting the payer's own SIM).
+        const familyMember = await this.resolveFamilyMember({
+            parentUid: userId,
+            memberUid: member_uid,
+            familyMemberId: family_member_id,
+            memberName: member_name,
+        });
+
+        if (!familyMember) {
+            console.log("v4 intent: family member not found", { userId, member_uid, family_member_id, member_name });
+            return {
+                memberNotFound: true,
+                message: "Family member not found for this user.",
+            };
+        }
+
+        // member_uid is a real Firebase uid only when the member has an app account. Manual CRM
+        // members carry the "manual-fm-<id>" placeholder instead — never let that reach the
+        // webhook as if it were a uid, or it would do Auth/Firestore lookups against it.
+        const linkedMemberUid = isPlaceholderUid(familyMember.member_uid) ? null : familyMember.member_uid || null;
+
+        console.log("v4 intent: beneficiary resolved", {
+            linkId: familyMember.id,
+            name: familyMember.name,
+            memberUid: linkedMemberUid,
+            iccid: familyMember.iccid || null,
+            isRegistered: !!linkedMemberUid,
+        });
+
         // ✅ Proceed with Stripe PaymentIntent
         return await stripe.paymentIntents.create({
             amount,
@@ -353,8 +424,13 @@ class PaymentService {
                 endDate,
                 country,
                 minutes,
-                member_uid,
-                family_member_id,
+                // Everything the webhook needs to credit the member, resolved once here.
+                // member_uid present ⇒ the member has a Firebase account; absent ⇒ manual member,
+                // so the webhook only touches their SIM (ICCID + balance/package), never Firestore.
+                member_uid: linkedMemberUid,
+                family_member_id: String(familyMember.id),
+                member_name: familyMember.name || member_name || null,
+                member_iccid: familyMember.iccid || null,
             },
         });
     }
@@ -1236,6 +1312,23 @@ class PaymentService {
         }
     }
      /**
+     * family_members.iccid is what the CRM family tree, the app's member list and the next
+     * payment for this member all read, so an ICCID resolved or freshly activated during a
+     * payment has to be written back — otherwise the next top-up provisions another SIM.
+     */
+    async attachIccidToFamilyLink(familyMemberRow, iccid) {
+        if (!familyMemberRow || !iccid) return;
+        const previous = familyMemberRow.iccid || null;
+        if (previous === iccid) return;
+        try {
+            await familyMemberRow.update({ iccid });
+            console.log("v4: attached iccid to family link", { linkId: familyMemberRow.id, iccid, previous });
+        } catch (err) {
+            console.log("v4: failed to attach iccid to family link", { linkId: familyMemberRow.id, iccid, error: err.message });
+        }
+    }
+
+    /**
      * v4 flow — the MAIN user (payerId) pays and receives the confirmation email,
      * but the ICCID balance / package is credited to the MEMBER (member_uid).
      * The member's ICCID is resolved from the family_members table.
@@ -1253,13 +1346,17 @@ class PaymentService {
             // register. Either or both may be present; family_member_id is preferred when set
             // since it also covers members who never get a Firebase account at all.
             const familyMemberId = metadata.family_member_id || null;
+            // Written by createStripeMemberPaymentIntent so the webhook can still find the row
+            // (and know which SIM was expected) even if the id is stale.
+            const memberName = metadata.member_name || null;
+            const metadataIccid = metadata.member_iccid || null;
             const device_id = metadata?.device_id || null;
             const ip = metadata?.ip || null;
             const amountUSD = amount_received / 100;
             const paymentType = metadata.paymentType || "unknown";
             const productType = metadata.productType || "unknown";
 
-            console.log("Step 1 → v4 metadata:", { payerId, memberUid, amountUSD, paymentType, productType });
+            console.log("Step 1 → v4 metadata:", { payerId, memberUid, familyMemberId, memberName, metadataIccid, amountUSD, paymentType, productType });
 
             // Transaction is recorded under the payer (they were charged)
             const [result, createdRow] = await Transaction.findOrCreate({
@@ -1300,23 +1397,18 @@ class PaymentService {
             let beneficiaryId = payerId;
             let user = payerUser;      // downstream SIM-side beneficiary defaults to payer
             let memberIccid = null;
-            if (memberUid || familyMemberId) {
-                let familyMember = null;
-                try {
-                    if (familyMemberId) {
-                        // Scoped to parent_uid so one parent can't pull balance onto a member
-                        // linked under a different parent by guessing/replaying an id.
-                        familyMember = await FamilyMember.findOne({
-                            where: { id: familyMemberId, parent_uid: payerId },
-                        });
-                    } else {
-                        familyMember = await FamilyMember.findOne({
-                            where: { parent_uid: payerId, member_uid: memberUid },
-                        });
-                    }
-                } catch (fmErr) {
-                    console.log("v4: family member lookup failed", { error: fmErr.message });
-                }
+            // Kept in scope past this block so the ICCID we end up crediting can be written back
+            // onto the family link — that's what the CRM tree and the next payment read.
+            let familyMemberRow = null;
+            if (memberUid || familyMemberId || memberName) {
+                // Same resolution as at intent creation (id → uid → name), always scoped to the
+                // payer so one parent can't pull balance onto another parent's member.
+                let familyMember = await this.resolveFamilyMember({
+                    parentUid: payerId,
+                    memberUid,
+                    familyMemberId,
+                    memberName,
+                });
 
                 // The Flutter app creates the member's Firebase account itself, before this
                 // payment, so this is often the FIRST time we see this member_uid — no
@@ -1328,7 +1420,7 @@ class PaymentService {
                     try {
                         const [row] = await FamilyMember.findOrCreate({
                             where: { parent_uid: payerId, member_uid: memberUid },
-                            defaults: { parent_uid: payerId, member_uid: memberUid, added_by: "parent" },
+                            defaults: { parent_uid: payerId, member_uid: memberUid, name: memberName || null, added_by: "parent" },
                         });
                         familyMember = row;
                         console.log("v4: created family_members link", { payerId, memberUid, linkId: row.id });
@@ -1337,14 +1429,18 @@ class PaymentService {
                     }
                 }
 
-                // Resolved uid: an explicit member_uid wins; otherwise use whatever the row
-                // already has on file (set once the manual member eventually registers).
-                let resolvedMemberUid = memberUid || familyMember?.member_uid || null;
+                familyMemberRow = familyMember;
+
+                // A real Firebase uid means the member has an app account and gets the full
+                // treatment (profile, wallet, miles, history). A placeholder is our own synthetic
+                // id for a manual member — it is NOT a uid and must never be looked up.
+                const rowUid = isPlaceholderUid(familyMember?.member_uid) ? null : familyMember?.member_uid || null;
+                let resolvedMemberUid = (isPlaceholderUid(memberUid) ? null : memberUid) || rowUid;
 
                 // Manual member just paid for via family_member_id, and this is the first time
                 // we see a real uid for them (memberUid passed alongside, or set since) —
                 // backfill it onto the row so it's linked/visible in the CRM going forward.
-                if (familyMember && resolvedMemberUid && !familyMember.member_uid) {
+                if (familyMember && resolvedMemberUid && !rowUid) {
                     try {
                         await familyMember.update({ member_uid: resolvedMemberUid });
                         console.log("v4: backfilled member_uid onto family link", { linkId: familyMember.id, resolvedMemberUid });
@@ -1353,8 +1449,17 @@ class PaymentService {
                     }
                 }
 
-                memberIccid = familyMember?.iccid || null;
-                console.log("v4: family member resolved", { familyMemberId, memberUid: resolvedMemberUid, memberIccid, linkId: familyMember?.id });
+                // metadata.member_iccid is the SIM the app showed the payer at checkout; the row
+                // is the source of truth, the metadata only a fallback for a row read back empty.
+                memberIccid = familyMember?.iccid || metadataIccid || null;
+                console.log("v4: family member resolved", {
+                    familyMemberId,
+                    linkId: familyMember?.id,
+                    name: familyMember?.name || memberName,
+                    memberUid: resolvedMemberUid,
+                    memberIccid,
+                    isRegistered: !!resolvedMemberUid,
+                });
 
                 if (resolvedMemberUid) {
                     let memberSnap = await db.collection("app-registered-users").doc(resolvedMemberUid).get();
@@ -1392,24 +1497,68 @@ class PaymentService {
                         console.log("v4: member user doc not found and couldn't be seeded, crediting payer", { resolvedMemberUid });
                         if (memberIccid) user = { ...payerUser, iccid: memberIccid };
                     }
-                } else if (memberIccid) {
-                    // Still fully manual — no Firebase account, and per the CRM this person will
-                    // never log into the app (they're a SIM handed to a family member, not an app
-                    // user). Give them their own stable id derived from the family_members row
+                } else if (familyMember) {
+                    // No member_uid ⇒ not linked to Firebase. This person will never log into the
+                    // app (they're a SIM handed to a family member), so the only work to do is on
+                    // their SIM: make sure they have an ICCID, then put the package or the balance
+                    // on it. Give them their own stable id derived from the family_members row
                     // (not a Firebase uid — nothing to collide with) so their credit is tracked as
                     // THEIRS, not folded into the payer's identity/tier/referral/coupon state.
-                    beneficiaryId = `manual-fm-${familyMember.id}`;
+                    beneficiaryId = manualMemberId(familyMember.id);
+
+                    if (!memberIccid) {
+                        // The CRM can add a member with just a name — paying for them is exactly
+                        // when they need a SIM. Take one from the pool and activate it under their
+                        // own id; it's written back onto the family link below. Without this the
+                        // payment used to fall through to the payer's own ICCID.
+                        console.log("v4: manual member has no iccid — provisioning one from the pool", { linkId: familyMember.id, beneficiaryId });
+                        const provisioned = await iccidService.activeIccid({
+                            uid: beneficiaryId,
+                            amount: amountUSD,
+                            paymentType,
+                            transactionId: id,
+                            simtlvToken: await getToken(),
+                            syncUserProfile: false, // no app-registered-users doc to mirror onto
+                        });
+
+                        if (provisioned?.iccid) {
+                            memberIccid = provisioned.iccid;
+                            console.log("v4: provisioned + activated iccid for manual member", { beneficiaryId, memberIccid, status: provisioned.status });
+                        } else {
+                            console.log("❌ v4: could not provision an iccid for manual member", { beneficiaryId, result: provisioned });
+                            await this.notifyAdminEmail(
+                                "Stripe v4: no ICCID available for family member",
+                                `PaymentIntent ${id} (payer ${payerId}, $${amountUSD}) is for family member "${familyMember.name || memberName || familyMember.id}" (link ${familyMember.id}), who has no ICCID, and provisioning one failed: ${provisioned?.msg || "unknown error"}. Nothing was credited — assign an ICCID and apply it manually.`
+                            );
+                        }
+                    }
+
                     user = {
                         uid: beneficiaryId,
-                        iccid: memberIccid,
-                        tier: "silver",     // baseline — not the payer's tier
-                        existingUser: true, // iccid was already provisioned when the CRM added them
-                        isActive: true,     // skip ICCID activation — it's already live
+                        iccid: memberIccid,   // may still be null — STEP 8 alerts rather than crediting the payer
+                        tier: "silver",       // baseline — not the payer's tier
+                        // A pool SIM we just activated is new to the OCS; one the CRM attached
+                        // earlier is already live under the main account.
+                        existingUser: !!(familyMember.iccid || metadataIccid),
+                        isActive: true,       // nothing further to activate
                     };
-                    console.log("v4: manual member has no account and never logs in — crediting their iccid under its own id", { familyMemberId, beneficiaryId, memberIccid });
+                    console.log("v4: manual member (not linked to firebase) — crediting their SIM only", { linkId: familyMember.id, beneficiaryId, memberIccid });
                 } else {
-                    console.log("v4: could not resolve a family member or iccid, crediting payer", { familyMemberId, memberUid });
+                    console.log("v4: could not resolve a family member, crediting payer", { familyMemberId, memberUid, memberName });
+                    await this.notifyAdminEmail(
+                        "Stripe v4: family member not found",
+                        `PaymentIntent ${id} (payer ${payerId}, $${amountUSD}) targeted family member id=${familyMemberId} uid=${memberUid} name=${memberName}, which no longer resolves to a family_members row. The balance went to the payer's own SIM.`
+                    );
                 }
+            } else {
+                // v4 exists solely to credit a MEMBER. With no beneficiary in the metadata the
+                // money silently lands on the payer's own SIM — which reads as "the member never
+                // got their ICCID". Make that loud; the payment itself must still be honoured.
+                console.log("⚠️ v4 payment carries no member_uid / family_member_id / member_name — crediting the PAYER", { payerId, transactionId: id });
+                await this.notifyAdminEmail(
+                    "Stripe v4 member payment without beneficiary",
+                    `PaymentIntent ${id} (payer ${payerId}, $${amountUSD}) used the v4 member flow but carried no beneficiary in its metadata, so the balance was credited to the payer's own ICCID.`
+                );
             }
             user.uid = user.uid || beneficiaryId;
             const userId = beneficiaryId; // SIM balance / package / history / miles → member
@@ -1417,7 +1566,7 @@ class PaymentService {
             // app-side wallet/miles/history steps below are skipped for them — only the OCS SIM
             // balance and the audit transaction record apply. Real accounts (payer or a
             // registered member) go through those steps as before.
-            const hasAppAccount = !userId.startsWith("manual-fm-");
+            const hasAppAccount = !isPlaceholderUid(userId);
             const referredBy = user.referredBy || null;
             console.log("Step 2 → beneficiary resolved:", { beneficiaryId, iccid: user.iccid, tier: user.tier });
 
@@ -1461,8 +1610,13 @@ class PaymentService {
                 let simtlvGigaToken = user.existingUser ? await getMainToken() : await getToken();
                 let emitPayload = null;
 
-                if (user.isActive === false) {
-                    console.log("Member SIM inactive → activating in GigaBoost plan");
+                // A registered member can have a profile doc with no ICCID at all (the app creates
+                // the account; the SIM is only attached when someone pays for it) — isActive is
+                // then missing rather than literally false, so the old check skipped activation
+                // and the package had no SIM to land on. Manual members already got their ICCID
+                // during resolution above, hence hasAppAccount.
+                if (user.isActive === false || (hasAppAccount && !user.iccid)) {
+                    console.log("Member SIM inactive or has no ICCID → activating in GigaBoost plan");
                     simtlvGigaToken = await getMainToken();
                     let iccidResultGiga = await iccidService.activeIccid({
                         uid: userId,
@@ -1511,6 +1665,18 @@ class PaymentService {
 
                 const plan = planSnap.docs[0].data();
                 console.log("Plan resolved:", { planCode, planName: plan.plan_name });
+
+                // Record the SIM on the family link before applying anything to it.
+                await this.attachIccidToFamilyLink(familyMemberRow, iccidGiga);
+
+                if (!iccidGiga) {
+                    console.log("❌ v4 GigaBoost: no ICCID for beneficiary — package NOT applied", { payerId, beneficiaryId, transactionId: id });
+                    await this.notifyAdminEmail(
+                        "Stripe v4: GigaBoost not applied (no ICCID)",
+                        `PaymentIntent ${id} (payer ${payerId}, beneficiary ${beneficiaryId}, $${amountUSD}) paid for ${planCode} but no ICCID could be resolved or activated. Apply the package manually.`
+                    );
+                    return;
+                }
 
                 try {
                     await this.affectPackage(iccidGiga, plan, user, paymentIntent);
@@ -1573,12 +1739,16 @@ class PaymentService {
                     };
                 }
 
-                this.delayedEmit(io, "payment_event_" + user.uid, {
-                    provider: "stripe",
-                    type: "payment_intent.succeeded",
-                    iccid: iccidGiga,
-                    data: emitPayload,
-                });
+                // Beneficiary's channel plus the payer's — it's the payer's app that is sitting on
+                // the payment screen, and a manual member has no app listening at all.
+                for (const target of [user.uid, payerId].filter((uid, i, all) => uid && all.indexOf(uid) === i)) {
+                    this.delayedEmit(io, "payment_event_" + target, {
+                        provider: "stripe",
+                        type: "payment_intent.succeeded",
+                        iccid: iccidGiga,
+                        data: emitPayload,
+                    });
+                }
 
                 // Confirmation email/webhook uses the PAYER info
                 const payload = {
@@ -1643,8 +1813,10 @@ class PaymentService {
             let simtlvToken = user.existingUser ? await getMainToken() : await getToken();
             let iccid = null;
 
-            if (user.isActive === false) {
-                console.log("Member SIM inactive → activating ICCID");
+            // See the GigaBoost branch: a registered member with no ICCID (and no isActive flag)
+            // needs one activated, or the top-up has nowhere to land.
+            if (user.isActive === false || (hasAppAccount && !user.iccid)) {
+                console.log("Member SIM inactive or has no ICCID → activating ICCID", { userId, isActive: user.isActive, hadIccid: !!user.iccid });
                 const iccidResult = await iccidService.activeIccid({
                     uid: userId,
                     amount: usdAmount,
@@ -1653,9 +1825,13 @@ class PaymentService {
                     simtlvToken,
                 });
                 iccid = iccidResult.iccid;
+                console.log("Member ICCID activation result:", iccidResult);
             }
             iccid = user.iccid || iccid;
             console.log("Resolved MEMBER ICCID for balance:", iccid);
+
+            // ------------------- STEP 6b: Record the ICCID on the family link -------------------
+            await this.attachIccidToFamilyLink(familyMemberRow, iccid);
 
             // ------------------- STEP 7: Referral Bonus (member referral) -------------------
             if (referredBy && !user.referralUsed) {
@@ -1729,7 +1905,15 @@ class PaymentService {
             let euroAmount = this.usdToEur(usdAmount);
             if (iccid) {
                 console.log("Adding balance to MEMBER ICCID:", { iccid, euroAmount });
-                await this.addSimtlvBalance(iccid, user, euroAmount, io, simtlvToken, "completed");
+                // The payer's app is the one waiting on the payment screen — notify it too.
+                await this.addSimtlvBalance(iccid, user, euroAmount, io, simtlvToken, "completed", [payerId]);
+            } else {
+                // Paid, but there is no SIM to put it on — always an alert, never a quiet skip.
+                console.log("❌ v4: no ICCID resolved for beneficiary — balance NOT credited", { payerId, beneficiaryId, transactionId: id });
+                await this.notifyAdminEmail(
+                    "Stripe v4: balance not credited (no ICCID)",
+                    `PaymentIntent ${id} (payer ${payerId}, beneficiary ${beneficiaryId}, $${amountUSD}) completed but no ICCID could be resolved or activated, so €${euroAmount} was not credited. Needs a manual top-up.`
+                );
             }
 
             // ------------------- STEP 9-11: Wallet-side bookkeeping (member) -------------------
@@ -2070,6 +2254,13 @@ class PaymentService {
             return;
         }
 
+        // Manual family members aren't users — writing this would create a stray
+        // app-registered-users doc for someone who can never log in.
+        if (isPlaceholderUid(uid)) {
+            console.log("setExistingUserFlag skipped for manual family member", { uid, value });
+            return;
+        }
+
         try {
             await db.collection("app-registered-users").doc(uid).set(
                 { existingUser: value },
@@ -2164,7 +2355,13 @@ class PaymentService {
         });
     }
 
-    async addSimtlvBalance(iccid, user, euroAmount, io, simtlvToken, status) {
+    /**
+     * extraEmitUids — v4 pays for someone else: the beneficiary's channel is the one that gets
+     * the event by default, but it's the PAYER's app that is waiting on this screen (and for a
+     * manual member nobody listens on the beneficiary channel at all). Pass the payer here so
+     * their app sees the payment complete.
+     */
+    async addSimtlvBalance(iccid, user, euroAmount, io, simtlvToken, status, extraEmitUids = []) {
 
         const subscriberResult = await iccidService.getSingleSubscriber({
             iccid: iccid,
@@ -2209,12 +2406,15 @@ class PaymentService {
             }
         };
 
-        this.delayedEmit(io, "payment_event_" + user.uid, {
-            provider: "stripe",
-            type: "payment_intent.succeeded",
-            iccid: iccid,
-            data: emitPayload
-        });
+        const emitTargets = [user.uid, ...extraEmitUids].filter((uid, i, all) => uid && all.indexOf(uid) === i);
+        for (const target of emitTargets) {
+            this.delayedEmit(io, "payment_event_" + target, {
+                provider: "stripe",
+                type: "payment_intent.succeeded",
+                iccid: iccid,
+                data: emitPayload
+            });
+        }
 
 
         // io.emit("payment_event_" + user.uid, {

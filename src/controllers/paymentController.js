@@ -232,13 +232,32 @@ exports.createStripeMemberPaymentIntent = async (req, res) => {
     // POST /members with no account yet — member_uid is null until they register). It's the
     // only stable id we have for them until then, so it rides along as an alternative to
     // member_uid so the Stripe webhook can still resolve which SIM to credit.
-    const { userId, productType, paymentType, planName, planId, device_id, paymentFor, country, minutes , member_uid, family_member_id } = req.body;
+    // The app sends each of these under several spellings (family_member_id / familyMemberId /
+    // member_id / memberId, parent_uid / parentUid / userId, …); accept them all so a payment
+    // never loses its beneficiary just because of the casing the caller picked.
+    const { productType, paymentType, planName, planId, device_id, paymentFor, country, minutes } = req.body;
+
+    const userId = req.body.parent_uid || req.body.parentUid || req.body.userId;
+    const member_uid = req.body.member_uid || req.body.memberUid || null;
+    const family_member_id =
+        req.body.family_member_id || req.body.familyMemberId || req.body.member_id || req.body.memberId || null;
+    // Fallback identifier: the CRM stores manual members by name under the parent, so a caller
+    // that only knows the name can still be matched to the right family_members row.
+    const member_name = req.body.member_name || req.body.memberName || req.body.name || null;
 
     const amount = req.body.amount ? parseInt(req.body.amount) : 10;
     //
     // if (!amount || typeof amount !== "number") {
     //     return res.status(400).json({ error: "Amount must be a valid number" });
     // }
+
+    if (!member_uid && !family_member_id && !member_name) {
+        // Nothing to resolve a beneficiary from — the webhook would silently top up the payer.
+        console.log("⚠️ create-member-intent called without member_uid / family_member_id / name — this payment would credit the payer, not a family member", { userId, productType, paymentFor });
+        return res.status(400).json({
+            error: "member_uid, family_member_id or name is required to pay for a family member",
+        });
+    }
 
     const intent = await paymentService.createStripeMemberPaymentIntent({
         amount,
@@ -253,8 +272,20 @@ exports.createStripeMemberPaymentIntent = async (req, res) => {
         country,
         minutes,
         member_uid,
-        family_member_id
+        family_member_id,
+        member_name,
     });
+
+    if (intent.blocked) {
+        return res.status(403).json({ error: intent.message });
+    }
+
+    // The member could not be matched to a family_members row — paying now would put the money
+    // on the payer's own SIM, so stop before charging instead of after.
+    if (intent.memberNotFound) {
+        console.log("❌ create-member-intent: family member not found", { userId, member_uid, family_member_id, member_name });
+        return res.status(404).json({ error: intent.message });
+    }
 
     // Save to UnpaidTransaction table
     try {

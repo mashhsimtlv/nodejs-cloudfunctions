@@ -5,6 +5,7 @@ const { User } = require("./../models");
 
 // Helper functions (you probably have them in another service already)
 const { getMainToken, getToken } = require("./../helpers/generalSettings");
+const { isPlaceholderUid } = require("./../helpers/familyMembers");
 // ⚠️ replace with your actual token / user service
 
 class IccidService {
@@ -12,8 +13,13 @@ class IccidService {
 
     /**
      * Activate ICCID for a user
+     *
+     * syncUserProfile — set false for beneficiaries with no app-registered-users doc (manual
+     * family members, who never log into the app). The ICCID is still taken from the pool,
+     * tagged with their id and activated on the OCS; only the profile mirror is skipped, since
+     * .update() on a missing doc throws and would abort the activation.
      */
-    async activeIccid({ uid, amount, paymentType, transactionId, simtlvToken }) {
+    async activeIccid({ uid, amount, paymentType, transactionId, simtlvToken, syncUserProfile = true }) {
         try {
             const iccidSnap = await db
                 .collection("iccids")
@@ -35,18 +41,22 @@ class IccidService {
                 assignedAt: admin.firestore.FieldValue.serverTimestamp(),
             });
 
-            // Update user profile
-            await db.collection("app-registered-users").doc(uid).update({
-                isActive: true,
-                iccid: iccidValue,
-            });
-            // Mirror ICCID to SQL users table when available
+            if (syncUserProfile) {
+                // Update user profile
+                await db.collection("app-registered-users").doc(uid).update({
+                    isActive: true,
+                    iccid: iccidValue,
+                });
+                // Mirror ICCID to SQL users table when available
 
                 try {
                     await User.update({ iccid: iccidValue }, { where: { uid } });
                 } catch (err) {
                     console.error("Failed to update SQL user iccid:", err.message);
                 }
+            } else {
+                console.log("activeIccid: skipping profile sync (beneficiary has no app account)", { uid, iccid: iccidValue });
+            }
 
 
             console.log(simtlvToken  , 'sim tlv token')
@@ -157,6 +167,13 @@ class IccidService {
     async markUserAsExisting(userData) {
         const uid = userData?.uid || userData?.userId;
         if (!uid) return;
+
+        // Manual family members have no account — writing this would create a stray
+        // app-registered-users doc for someone who can never log in.
+        if (isPlaceholderUid(uid)) {
+            console.log("markUserAsExisting skipped for manual family member", { uid });
+            return;
+        }
 
         try {
             const userRef = admin.firestore().collection("app-registered-users").doc(uid);
