@@ -192,6 +192,101 @@ exports.createTranzilaPaymentIntent = async (req, res) => {
 };
 
 /**
+ * Create a Tranzila Payment Intent for a FAMILY MEMBER (hosted iframe, v4 flow).
+ * Same request body as createStripeMemberPaymentIntent — the app only swaps the endpoint —
+ * and returns an iframeUrl instead of a Stripe clientSecret.
+ */
+exports.createTranzilaMemberPaymentIntent = async (req, res) => {
+    console.log(req.body, "req body");
+
+    const ip =
+        req.headers["x-forwarded-for"]?.split(",")[0]?.trim() ||
+        req.socket?.remoteAddress ||
+        req.connection?.remoteAddress ||
+        null;
+
+    console.log("Client IP:", ip);
+
+    const { productType, paymentType, planName, planId, device_id, paymentFor, country, minutes, success_url, fail_url } = req.body;
+
+    // Same aliases the Stripe member endpoint accepts — see createStripeMemberPaymentIntent.
+    const userId = req.body.parent_uid || req.body.parentUid || req.body.userId;
+    const member_uid = req.body.member_uid || req.body.memberUid || null;
+    const family_member_id =
+        req.body.family_member_id || req.body.familyMemberId || req.body.member_id || req.body.memberId || null;
+    const member_name = req.body.member_name || req.body.memberName || req.body.name || null;
+
+    const amount = req.body.amount ? parseInt(req.body.amount) : 10;
+
+    if (!member_uid && !family_member_id && !member_name) {
+        console.log("⚠️ tranzila create-member-intent called without member_uid / family_member_id / name", { userId, productType, paymentFor });
+        return res.status(400).json({
+            error: "member_uid, family_member_id or name is required to pay for a family member",
+        });
+    }
+
+    const intent = await paymentService.createTranzilaMemberPaymentIntent({
+        amount,
+        userId,
+        productType,
+        paymentType,
+        planName,
+        planId,
+        device_id,
+        ip,
+        paymentFor,
+        country,
+        minutes,
+        member_uid,
+        family_member_id,
+        member_name,
+        successUrl: success_url,
+        failUrl: fail_url,
+    });
+
+    if (intent.blocked) {
+        return res.status(403).json({ error: intent.message });
+    }
+
+    // Unresolvable beneficiary — stop before charging, not after (the notify webhook would
+    // otherwise credit the payer's own SIM).
+    if (intent.memberNotFound) {
+        console.log("❌ tranzila create-member-intent: family member not found", { userId, member_uid, family_member_id, member_name });
+        return res.status(404).json({ error: intent.message });
+    }
+
+    // Save to UnpaidTransaction table
+    try {
+        const userRef = db.collection("app-registered-users").doc(userId);
+        const userSnap = await userRef.get();
+        const userData = userSnap.data();
+        const userEmail = userData?.email || "";
+
+        await UnpaidTransaction.create({
+            user_id: String(userId),
+            transaction_id: intent.id,
+            user_email: userEmail,
+            status: "unpaid",
+            page_source: req.body.page_source || paymentFor || productType || null,
+            amount: String(amount),
+        });
+        console.log("✅ [UnpaidTransaction] Saved record for intent:", intent.id);
+    } catch (saveErr) {
+        console.error("❌ [UnpaidTransaction] Failed to save record:", saveErr.message);
+    }
+
+    logger.info("Tranzila member payment intent created", {
+        userId,
+        amount,
+        productType,
+        paymentType,
+        paymentId: intent.id,
+    });
+
+    res.json({ paymentId: intent.id, iframeUrl: intent.iframeUrl });
+};
+
+/**
  * Tranzila server-to-server notify (IPN) — form-encoded POST.
  * The ONLY place a Tranzila payment is confirmed; on approval the
  * transaction goes through the same v2 pipeline as the Stripe webhook.

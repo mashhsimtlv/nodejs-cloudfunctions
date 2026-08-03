@@ -195,14 +195,25 @@ class PaymentService {
             createdAt,
         });
 
+        return {
+            id: paymentId,
+            iframeUrl: this.buildTranzilaIframeUrl({ paymentId, amount, description: productType || paymentFor, successUrl, failUrl }),
+        };
+    }
+
+    /**
+     * Hosted-page URL for a stored tranzila-payment-intents doc. Shared by the wallet/GigaBoost
+     * (v2) and member (v4) flows so terminal, currency and callback wiring can't drift apart.
+     */
+    buildTranzilaIframeUrl({ paymentId, amount, description, successUrl, failUrl }) {
         const terminal = process.env.TRANZILA_TERMINAL;
         const base = process.env.PUBLIC_BASE_URL || "https://cloudapi.simtlv.co.il";
         const params = new URLSearchParams({
             sum: (amount / 100).toFixed(2), // Tranzila wants currency units, not cents
-            currency: process.env.TRANZILA_CURRENCY || "2", // 2 = USD (v2 flow credits USD), 1 = ILS
+            currency: process.env.TRANZILA_CURRENCY || "2", // 2 = USD (both flows credit USD), 1 = ILS
             cred_type: "1",
             tranmode: "A",
-            pdesc: `SIMTLV ${productType || paymentFor || "payment"}`,
+            pdesc: `SIMTLV ${description || "payment"}`,
             payment_id: paymentId, // echoed back in the notify callback
             // Browser redirects only — status is decided by the notify webhook, never by these
             success_url_address: successUrl || process.env.TRANZILA_SUCCESS_URL || `${base}/payment-result?id=${paymentId}`,
@@ -216,9 +227,124 @@ class PaymentService {
             trTextColor: "1f2937",
         });
 
+        return `https://direct.tranzila.com/${terminal}/iframenew.php?${params.toString()}`;
+    }
+
+    /**
+     * Create a Tranzila "payment intent" for a FAMILY MEMBER (hosted iframe flow, v4).
+     * Mirrors createStripeMemberPaymentIntent — same params from the app, same beneficiary
+     * resolution, same metadata — but returns the hosted-page iframe URL instead of a Stripe
+     * clientSecret. handleTranzilaNotify replays that metadata into saveMemberStripeTransaction,
+     * so the member pipeline (ICCID, package, balance) is literally the same code as Stripe's.
+     */
+    async createTranzilaMemberPaymentIntent({
+        amount,
+        userId,
+        productType,
+        paymentType,
+        planName,
+        planId,
+        device_id,
+        ip,
+        paymentFor,
+        startDate,
+        endDate,
+        country,
+        minutes,
+        member_uid,
+        family_member_id,
+        member_name,
+        successUrl,
+        failUrl,
+    }) {
+        console.log("Here is the device id ", device_id);
+
+        const userRef = db.collection("app-registered-users").doc(userId);
+        const userSnap = await userRef.get();
+        const payer = userSnap.data();
+        if (!payer) {
+            throw new Error("User not found");
+        }
+
+        const email = payer.email || "";
+        console.log("Fetched payer:", { userId, email });
+
+        // ✅ Block emails from the blocked_emails table (seed/update via: node src/seeders/seedBlockedEmails.js)
+        try {
+            const blockedRows = await BlockedEmail.findAll({ attributes: ["pattern"] });
+            const lowerEmail = email.toLowerCase();
+            if (blockedRows.some((row) => lowerEmail.includes(String(row.pattern).toLowerCase()))) {
+                console.log("Blocked payment intent for blocked email:", email);
+                return { blocked: true, message: "Payments are not allowed for this email domain." };
+            }
+        } catch (blockErr) {
+            // fail-open so a lookup error doesn't break payments
+            console.error("❌ Blocked email lookup failed:", blockErr.message);
+        }
+
+        // Resolve the beneficiary before taking any money — same rule as the Stripe member flow:
+        // an unresolvable member would end up crediting the payer's own SIM in the webhook.
+        const familyMember = await this.resolveFamilyMember({
+            parentUid: userId,
+            memberUid: member_uid,
+            familyMemberId: family_member_id,
+            memberName: member_name,
+        });
+
+        if (!familyMember) {
+            console.log("v4 tranzila intent: family member not found", { userId, member_uid, family_member_id, member_name });
+            return { memberNotFound: true, message: "Family member not found for this user." };
+        }
+
+        const linkedMemberUid = isPlaceholderUid(familyMember.member_uid) ? null : familyMember.member_uid || null;
+
+        console.log(amount, "tranzila member payment");
+
+        const paymentId = `tz_${Date.now()}_${crypto.randomBytes(6).toString("hex")}`;
+        const createdAt = new Date();
+
+        // Tranzila can't carry metadata through the hosted page, so it lives in Firestore keyed
+        // by paymentId until the notify webhook reads it back — same fields the Stripe v4
+        // PaymentIntent carries.
+        const metadata = {
+            userId,
+            productType: productType || null,
+            paymentType: paymentType || null,
+            planName: planName || null,
+            planId: planId || null,
+            flowVersion: "v4",
+            device_id: device_id || null,
+            ip: ip || null,
+            paymentFor: paymentFor || null,
+            startDate: startDate || null,
+            endDate: endDate || null,
+            country: country || null,
+            minutes: minutes || null,
+            member_uid: linkedMemberUid,
+            family_member_id: String(familyMember.id),
+            member_name: familyMember.name || member_name || null,
+            member_iccid: familyMember.iccid || null,
+            provider: "tranzila",
+        };
+
+        console.log("v4 tranzila intent: beneficiary resolved", {
+            linkId: familyMember.id,
+            name: familyMember.name,
+            memberUid: linkedMemberUid,
+            iccid: familyMember.iccid || null,
+            isRegistered: !!linkedMemberUid,
+        });
+
+        await db.collection("tranzila-payment-intents").doc(paymentId).set({
+            ...metadata,
+            amount, // cents, same unit the Stripe flow uses
+            status: "pending",
+            createdAt,
+        });
+
         return {
             id: paymentId,
-            iframeUrl: `https://direct.tranzila.com/${terminal}/iframenew.php?${params.toString()}`,
+            iframeUrl: this.buildTranzilaIframeUrl({ paymentId, amount, description: productType || paymentFor, successUrl, failUrl }),
         };
     }
 
@@ -265,7 +391,7 @@ class PaymentService {
 
         const { amount, status, createdAt, notifyPayload, processedAt, ...metadata } = intent;
 
-        // Same shape saveStripeTransaction expects from a Stripe webhook
+        // Same shape the Stripe webhook handlers expect
         const paymentIntent = {
             id: paymentId,
             amount_received: amount, // cents, trusted from our stored intent — not the callback
@@ -273,8 +399,17 @@ class PaymentService {
             metadata,
         };
 
-        console.log("[TRANZILA NOTIFY] processing via v2 flow:", paymentId);
-        await this.saveStripeTransaction(paymentIntent, io);
+        // One notify URL for both flows, dispatched on the stored flowVersion exactly like the
+        // Stripe webhook does: v4 credits a family member, v2 credits the payer's own wallet/SIM.
+        const flowVersion = metadata.flowVersion || "v2";
+
+        if (flowVersion === "v4") {
+            console.log("[TRANZILA NOTIFY] processing via v4 member flow:", paymentId);
+            await this.saveMemberStripeTransaction(paymentIntent, io);
+        } else {
+            console.log("[TRANZILA NOTIFY] processing via v2 flow:", paymentId);
+            await this.saveStripeTransaction(paymentIntent, io);
+        }
 
         return { ok: true, status: 200, message: "OK" };
     }
@@ -1335,7 +1470,7 @@ class PaymentService {
      */
     async saveMemberStripeTransaction(paymentIntent, io) {
         try {
-            console.log("===== Stripe MEMBER (v4) webhook started =====");
+            console.log("===== MEMBER (v4) webhook started =====", { provider: paymentIntent?.metadata?.provider || "stripe" });
 
             // ------------------- STEP 1: Extract metadata and validate duplicate -------------------
             const { metadata, id, amount_received, created } = paymentIntent;
@@ -1355,8 +1490,11 @@ class PaymentService {
             const amountUSD = amount_received / 100;
             const paymentType = metadata.paymentType || "unknown";
             const productType = metadata.productType || "unknown";
+            // "tranzila" when fed by handleTranzilaNotify — the member pipeline below is identical
+            // for both gateways, only the audit trail records which one took the money.
+            const provider = metadata.provider || "stripe";
 
-            console.log("Step 1 → v4 metadata:", { payerId, memberUid, familyMemberId, memberName, metadataIccid, amountUSD, paymentType, productType });
+            console.log("Step 1 → v4 metadata:", { payerId, memberUid, familyMemberId, memberName, metadataIccid, amountUSD, paymentType, productType, provider });
 
             // Transaction is recorded under the payer (they were charged)
             const [result, createdRow] = await Transaction.findOrCreate({
@@ -1365,7 +1503,7 @@ class PaymentService {
                     user_id: payerId,
                     transaction_id: id,
                     amount: amountUSD,
-                    provider: "stripe",
+                    provider,
                     product_type: productType,
                     payment_type: paymentType,
                     createdAt: new Date(created * 1000),
@@ -1707,7 +1845,7 @@ class PaymentService {
                         transactionId: id,
                         transactionTime: new Date(created * 1000),
                         isUsed: true,
-                        provider: "stripe",
+                        provider,
                         productType: planCode,
                         paymentType,
                         memberUid: beneficiaryId,
@@ -1743,7 +1881,7 @@ class PaymentService {
                 // the payment screen, and a manual member has no app listening at all.
                 for (const target of [user.uid, payerId].filter((uid, i, all) => uid && all.indexOf(uid) === i)) {
                     this.delayedEmit(io, "payment_event_" + target, {
-                        provider: "stripe",
+                        provider,
                         type: "payment_intent.succeeded",
                         iccid: iccidGiga,
                         data: emitPayload,
@@ -1753,7 +1891,7 @@ class PaymentService {
                 // Confirmation email/webhook uses the PAYER info
                 const payload = {
                     totalPaymentValue: paymentIntent.amount_received / 100,
-                    paymentMethod: "stripe",
+                    paymentMethod: provider,
                     userUid: payerUser.uid || payerId || "unknown",
                     firstName: payerUser.firstName || "",
                     lastName: payerUser.lastName || "",
@@ -1957,7 +2095,7 @@ class PaymentService {
                 transactionId: id,
                 transactionTime: new Date(created * 1000),
                 isUsed: true,
-                provider: "stripe",
+                provider,
                 productType,
                 paymentType,
                 memberUid: beneficiaryId,
@@ -1968,27 +2106,11 @@ class PaymentService {
                 { where: { transaction_id: id } }
             );
 
-            if (metadata?.paymentFor === "calling") {
-                try {
-                    const startTime = metadata.startDate ? new Date(metadata.startDate) : new Date(created * 1000);
-                    const endTime = metadata.endDate ? new Date(metadata.endDate) : null;
-                    const assigned = await this.assignCallingNumber({
-                        userId,
-                        startTime,
-                        endTime,
-                        amount: usdAmount,
-                    });
-                    console.log("📞 Calling number assigned (member)", {
-                        userId,
-                        callingNumber: assigned.number.number,
-                        isExisting: assigned.isExisting,
-                    });
-                } catch (assignErr) {
-                    console.error("❌ Failed to assign calling number:", assignErr.message);
-                }
-            }
+            // No calling number is assigned in v4, even for paymentFor === "calling": the member's
+            // payment only tops up their SIM. Numbers stay a main-account (v3) concern.
 
-            console.log("===== Stripe MEMBER transaction processed =====", {
+            console.log("===== MEMBER transaction processed =====", {
+                provider,
                 payerId,
                 beneficiaryId,
                 transactionId: id,
@@ -2000,7 +2122,7 @@ class PaymentService {
             // Confirmation email/webhook uses the PAYER info
             const payload = {
                 totalPaymentValue: paymentIntent.amount_received / 100,
-                paymentMethod: "stripe",
+                paymentMethod: provider,
                 userUid: payerUser.uid || payerId || "unknown",
                 firstName: payerUser.firstName || "",
                 lastName: payerUser.lastName || "",
