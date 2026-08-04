@@ -15,6 +15,7 @@ const iccidService = require("../services/iccidService");
 const subscriberService = require("../services/subscriberService");
 const { getMainToken, getToken } = require("../helpers/generalSettings");
 const { manualMemberId, isPlaceholderUid } = require("../helpers/familyMembers");
+const callingCredentialsService = require("./callingCredentialsService");
 const { models } = require("../models"); // Sequelize models
 const { sequelize, Transaction, UnpaidUser, CallNumber, UserCallerNumber, User, FamilyMember, BlockedEmail } = require("../models");
 // const User = models.User || models.user; // optional MySQL/Mongo user model
@@ -2245,6 +2246,67 @@ class PaymentService {
         });
 
         console.log("✅ Legacy transaction saved:", { userId, transactionId: id });
+    }
+
+    /**
+     * Update a user's FCM device token (app-registered-users.fcmToken, same field
+     * notificationService/referral code already reads) and, if they have an active
+     * calling number, sync it to the Asterisk box's calling_credentials table so the
+     * dialplan (CALLING_CRED_UID / firebase_lookup.php) can resolve the owning uid.
+     * user_caller_numbers.user_id already IS the Firebase uid (see assignCallingNumber
+     * below) — there is no separate MySQL "users" table in this project to join through.
+     */
+    async updateCallingFcmToken({ firebaseAuthUid, fcmToken }) {
+        if (!firebaseAuthUid) {
+            throw new Error("firebaseAuthUid is required");
+        }
+        if (!fcmToken) {
+            throw new Error("firebase_uid (FCM device token) is required in the request body");
+        }
+
+        const userRef = db.collection("app-registered-users").doc(firebaseAuthUid);
+        const userSnap = await userRef.get();
+        if (!userSnap.exists) {
+            throw new Error("User not found");
+        }
+
+        await userRef.update({ fcmToken });
+        console.log("updateCallingFcmToken: fcmToken updated", { firebaseAuthUid });
+
+        const now = new Date();
+        const mapping = await UserCallerNumber.findOne({
+            where: {
+                user_id: firebaseAuthUid,
+                [Sequelize.Op.or]: [
+                    { end_time: null },
+                    { end_time: { [Sequelize.Op.gt]: now } },
+                ],
+            },
+            include: [{ model: CallNumber, as: "callingNumber" }],
+            order: [["createdAt", "DESC"]],
+        });
+
+        if (!mapping || !mapping.callingNumber) {
+            console.log("updateCallingFcmToken: no active calling number for user", { firebaseAuthUid });
+            return { fcmUpdated: true, callingSynced: false };
+        }
+
+        try {
+            await callingCredentialsService.syncCallingCredential({
+                firebaseUid: firebaseAuthUid,
+                phoneNumber: mapping.callingNumber.number,
+                extension: mapping.callingNumber.extension,
+            });
+            console.log("updateCallingFcmToken: calling_credentials synced", {
+                firebaseAuthUid,
+                number: mapping.callingNumber.number,
+            });
+            return { fcmUpdated: true, callingSynced: true, number: mapping.callingNumber.number };
+        } catch (err) {
+            // Fail-open: the FCM token is already saved regardless of Asterisk DB reachability.
+            console.error("❌ updateCallingFcmToken: calling_credentials sync failed", err.message);
+            return { fcmUpdated: true, callingSynced: false, syncError: err.message };
+        }
     }
 
     /**

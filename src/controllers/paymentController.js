@@ -669,6 +669,30 @@ exports.getCallingCredentialsByUser = async (req, res) => {
     }
 };
 
+exports.updateCallingFcm = async (req, res) => {
+    try {
+        const { firebaseAuthUid } = req.params;
+        const fcmToken = req.body.firebase_uid;
+
+        if (!firebaseAuthUid) {
+            return res.status(400).json({ error: "firebaseAuthUid is required" });
+        }
+        if (!fcmToken) {
+            return res.status(400).json({ error: "firebase_uid (FCM device token) is required in the request body" });
+        }
+
+        const result = await paymentService.updateCallingFcmToken({ firebaseAuthUid, fcmToken });
+
+        return res.json({ success: true, ...result });
+    } catch (err) {
+        logger.error("Update calling FCM token failed", { error: err.message });
+        if (err.message === "User not found") {
+            return res.status(404).json({ error: err.message });
+        }
+        return res.status(500).json({ error: err.message });
+    }
+};
+
 exports.checkCallingNumberAvailability = async (req, res) => {
     try {
         const country = req.query.country || req.body?.country;

@@ -21,6 +21,7 @@ router.post("/paypal/capture-order", paymentController.capturePayPalOrder);
 router.post("/paypal/webhook", express.json({ type: "application/json" }), paymentController.handlePayPalWebhook);
 router.post("/paypal/test/webhook", express.json({ type: "application/json" }), paymentController.handlePayPalWebhookTest);
 router.post("/calling/debug/number-unavailable-email", paymentController.debugCallingNumberUnavailableEmail);
+router.post("/calling/update-fcm/:firebaseAuthUid", paymentController.updateCallingFcm);
 
 router.get("/stripe-intent", paymentController.getStripePaymentIntent);
 router.get("/calling/availability", paymentController.checkCallingNumberAvailability);
