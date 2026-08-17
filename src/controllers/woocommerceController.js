@@ -87,14 +87,28 @@ const extractRefCode = (message) => {
     return match[1] || match[2] || null;
 };
 
+/**
+ * Resolves a ref code minted by either of the two systems that hand one out:
+ * the legacy Google-only landing page tracker (gclid_codes — gclid only), or
+ * the newer multi-channel one (click_ref_codes, proxy-firebase's
+ * /api/track/whatsapp-ref-code — gclid/fbclid/ttclid). A code minted by the
+ * newer system was invisible to this lookup before, so any Facebook/TikTok
+ * (and some Google) leads never reached store-leads-orders at all.
+ */
 const fetchGclidRecord = async (code) => {
     if (!code) return null;
-    const [rows] = await sequelize.query(
-        "SELECT * FROM gclid_codes WHERE code = ? LIMIT 1",
+
+    const [gclidRows] = await sequelize.query(
+        "SELECT gclid, NULL AS fbclid, NULL AS ttclid, landing_url, NULL AS visitor_id FROM gclid_codes WHERE code = ? LIMIT 1",
         { replacements: [code] }
     );
-    console.log(rows, rows[0], "sdfsdfdsf");
-    return Array.isArray(rows) && rows.length ? rows[0] : null;
+    if (Array.isArray(gclidRows) && gclidRows.length) return gclidRows[0];
+
+    const [clickRefRows] = await sequelize.query(
+        "SELECT gclid, fbclid, ttclid, landing_url, visitor_id FROM click_ref_codes WHERE code = ? LIMIT 1",
+        { replacements: [code] }
+    );
+    return Array.isArray(clickRefRows) && clickRefRows.length ? clickRefRows[0] : null;
 };
 
 const getCurrentDateTimeParts = () => {
@@ -115,6 +129,8 @@ const normalizeLeadPayload = (source, phone) => {
         callStatus: source?.call_status ?? source?.callstatus ?? null,
         callDuration: source?.call_duration ?? source?.callduration ?? null,
         gclid: source?.gclid ?? null,
+        fbclid: source?.fbclid ?? null,
+        ttclid: source?.ttclid ?? null,
         pageLocation: source?.landing_url ?? null,
         status: null,
     };
@@ -322,10 +338,13 @@ exports.getAllConversation = async (req, res) => {
         }
 
         const leadPhone = body?.contact?.phone ? String(body.contact.phone) : null;
-        if (!leadPhone || !gclidRecord?.gclid) {
+        const hasClickId = Boolean(gclidRecord?.gclid || gclidRecord?.fbclid || gclidRecord?.ttclid);
+        if (!leadPhone || !hasClickId) {
             console.log("Missing required lead fields:", {
                 phone: leadPhone,
                 gclid: gclidRecord?.gclid ?? null,
+                fbclid: gclidRecord?.fbclid ?? null,
+                ttclid: gclidRecord?.ttclid ?? null,
             });
             return res.status(200).json({ success: true });
         }
