@@ -1002,7 +1002,7 @@ class PaymentService {
                     });
 
                     await Transaction.update(
-                        { amount: usdAmount, product_type: productType, payment_type: paymentType },
+                        { amount: usdAmount, product_type: productType, payment_type: paymentType, plan_name: plan.plan_name },
                         { where: { transaction_id: id } }
                     );
 
@@ -1497,7 +1497,10 @@ class PaymentService {
 
             console.log("Step 1 → v4 metadata:", { payerId, memberUid, familyMemberId, memberName, metadataIccid, amountUSD, paymentType, productType, provider });
 
-            // Transaction is recorded under the payer (they were charged)
+            // Transaction is recorded under the payer (they were charged). plan_name/member_*
+            // here are the raw metadata read at Step 1, before beneficiary resolution below —
+            // good enough to show in the CRM immediately; the resolved values (once the real
+            // family member/ICCID are known) patch this row again further down.
             const [result, createdRow] = await Transaction.findOrCreate({
                 where: { transaction_id: id },
                 defaults: {
@@ -1508,6 +1511,10 @@ class PaymentService {
                     product_type: productType,
                     payment_type: paymentType,
                     createdAt: new Date(created * 1000),
+                    plan_name: metadata.planName || null,
+                    member_name: memberName,
+                    member_iccid: metadataIccid,
+                    family_member_id: familyMemberId,
                 },
             });
 
@@ -1700,6 +1707,28 @@ class PaymentService {
                 );
             }
             user.uid = user.uid || beneficiaryId;
+
+            // Patch the CRM-facing row with the fully-resolved beneficiary, now that
+            // resolveFamilyMember() and the manual-member provisioning above have run — these
+            // values (familyMemberRow.name, the possibly-just-provisioned memberIccid) are more
+            // authoritative than the raw metadata the initial findOrCreate above used. Skipped
+            // when no family member resolved at all (money went to the payer's own SIM), so that
+            // path's row keeps whatever the initial write already had rather than being nulled out.
+            if (familyMemberRow) {
+                try {
+                    await Transaction.update(
+                        {
+                            member_name: familyMemberRow.name || memberName || null,
+                            member_iccid: memberIccid || null,
+                            family_member_id: String(familyMemberRow.id),
+                        },
+                        { where: { transaction_id: id } }
+                    );
+                } catch (patchErr) {
+                    console.log("v4: failed to patch resolved member details onto transaction (non-fatal):", patchErr.message);
+                }
+            }
+
             const userId = beneficiaryId; // SIM balance / package / history / miles → member
             // A manual member's synthetic id has no Firestore doc (they never log in), so the
             // app-side wallet/miles/history steps below are skipped for them — only the OCS SIM
@@ -1853,7 +1882,7 @@ class PaymentService {
                     });
 
                     await Transaction.update(
-                        { amount: usdAmount, product_type: productType, payment_type: paymentType },
+                        { amount: usdAmount, product_type: productType, payment_type: paymentType, plan_name: plan.plan_name },
                         { where: { transaction_id: id } }
                     );
                 } catch (err) {

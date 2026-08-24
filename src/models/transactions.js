@@ -43,6 +43,22 @@ class Transaction extends Model {
                     type: DataTypes.DATE,
                     allowNull: true,
                 },
+                plan_name: {
+                    type: DataTypes.STRING(255),
+                    allowNull: true,
+                },
+                member_name: {
+                    type: DataTypes.STRING(255),
+                    allowNull: true,
+                },
+                member_iccid: {
+                    type: DataTypes.STRING(64),
+                    allowNull: true,
+                },
+                family_member_id: {
+                    type: DataTypes.STRING(64),
+                    allowNull: true,
+                },
             },
             {
                 sequelize,
