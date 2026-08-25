@@ -8,6 +8,10 @@ router.post("/tranzila/create-intent", paymentController.createTranzilaPaymentIn
 // dispatching on the flowVersion stored with the intent.
 router.post("/tranzila/create-member-intent", paymentController.createTranzilaMemberPaymentIntent);
 router.post("/tranzila/notify", express.urlencoded({ extended: true }), paymentController.handleTranzilaNotify);
+// DEMO ONLY — no Firebase user required, fully isolated from the real payment
+// pipeline. See paymentService.createTranzilaDemoIntent.
+router.post("/tranzila/create-demo-intent", paymentController.createTranzilaDemoIntent);
+router.post("/tranzila/demo-notify", express.urlencoded({ extended: true }), paymentController.handleTranzilaDemoNotify);
 router.post("/stripe/create-member-intent", paymentController.createStripeMemberPaymentIntent);
 router.post("/calling/create-intent", paymentController.createCallingPaymentIntent);
 router.post("/calling/paypal/create-order", paymentController.createCallingPayPalOrder);

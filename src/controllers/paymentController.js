@@ -308,6 +308,48 @@ exports.handleTranzilaNotify = async (req, res) => {
     }
 };
 
+/**
+ * DEMO ONLY — no Firebase user required (this is for showing a Tranzila-hosted
+ * checkout embedded in a page design; the real flows require an app account,
+ * which a web guest checkout page has no equivalent of). See
+ * paymentService.createTranzilaDemoIntent for why this is fully isolated from
+ * the real payment pipeline.
+ */
+exports.createTranzilaDemoIntent = async (req, res) => {
+    try {
+        const amountIls = parseFloat(req.body.amount);
+        if (!Number.isFinite(amountIls) || amountIls <= 0) {
+            return res.status(400).json({ error: "amount (ILS, positive number) is required" });
+        }
+
+        const intent = await paymentService.createTranzilaDemoIntent({
+            amountIls,
+            description: req.body.description || null,
+            customerName: req.body.customerName || null,
+            customerEmail: req.body.customerEmail || null,
+            customerPhone: req.body.customerPhone || null,
+        });
+
+        return res.json({ paymentId: intent.id, iframeUrl: intent.iframeUrl });
+    } catch (err) {
+        console.error("❌ createTranzilaDemoIntent failed:", err.message);
+        return res.status(500).json({ error: err.message });
+    }
+};
+
+/** DEMO ONLY — see createTranzilaDemoIntent. */
+exports.handleTranzilaDemoNotify = async (req, res) => {
+    const params = { ...req.query, ...(req.body || {}) };
+    console.log("[TRANZILA DEMO NOTIFY] payload:", JSON.stringify(params));
+    try {
+        const result = await paymentService.handleTranzilaDemoNotify(params);
+        return res.status(result.status).send(result.message);
+    } catch (err) {
+        console.error("❌ Tranzila demo notify failed:", err.message);
+        return res.status(500).send(`Demo notify handler failed: ${err.message}`);
+    }
+};
+
 exports.createStripeMemberPaymentIntent = async (req, res) => {
     // try {
     const io = req.app.get("io");

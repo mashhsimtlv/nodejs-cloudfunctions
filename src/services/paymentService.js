@@ -232,6 +232,77 @@ class PaymentService {
     }
 
     /**
+     * DEMO ONLY — for showing a client/boss what a Tranzila-hosted checkout looks
+     * like embedded in our page design. Completely isolated from the real payment
+     * pipeline: writes to its own Firestore collection (tranzila-demo-intents, not
+     * tranzila-payment-intents), and its notify handler (handleTranzilaDemoNotify)
+     * only flips a status field — it never calls saveStripeTransaction/
+     * saveMemberStripeTransaction, so a demo submission can never credit a wallet,
+     * activate a SIM, or touch any real user/order data.
+     *
+     * IMPORTANT: there is no Tranzila sandbox terminal configured (TRANZILA_ENV=
+     * production, TRANZILA_TERMINAL=simtlv is the live one) — a real card entered
+     * here would be a real charge. Only use Tranzila's own published test card
+     * numbers, never a real card, when demoing this.
+     */
+    async createTranzilaDemoIntent({ amountIls, description, customerName, customerEmail, customerPhone }) {
+        const paymentId = `tzdemo_${Date.now()}_${crypto.randomBytes(6).toString("hex")}`;
+        const createdAt = new Date();
+
+        await db.collection("tranzila-demo-intents").doc(paymentId).set({
+            amountIls,
+            description: description || null,
+            customerName: customerName || null,
+            customerEmail: customerEmail || null,
+            customerPhone: customerPhone || null,
+            status: "pending",
+            createdAt,
+        });
+
+        const terminal = process.env.TRANZILA_TERMINAL;
+        const base = process.env.PUBLIC_BASE_URL || "https://cloudapi.simtlv.co.il";
+        const params = new URLSearchParams({
+            sum: amountIls.toFixed(2),
+            currency: "1", // ILS — this demo is priced in shekels regardless of the real flows' USD default
+            cred_type: "1",
+            tranmode: "A",
+            pdesc: `SIMTLV DEMO ${description || "checkout"}`,
+            payment_id: paymentId,
+            notify_url_address: `${base}/api/payments/tranzila/demo-notify`,
+            u71: "1",
+            lang: "us",
+            nologo: "1",
+            hidesum: "1",
+            trBgColor: "ffffff",
+            trTextColor: "1f2937",
+        });
+
+        return { id: paymentId, iframeUrl: `https://direct.tranzila.com/${terminal}/iframenew.php?${params.toString()}` };
+    }
+
+    /** DEMO ONLY — mirrors handleTranzilaNotify's status bookkeeping, no crediting. */
+    async handleTranzilaDemoNotify(params) {
+        const paymentId = params.payment_id;
+        const responseCode = params.Response ?? params.response;
+        const approved = responseCode === "000";
+
+        if (!paymentId) return { ok: false, status: 400, message: "missing payment_id" };
+
+        const intentRef = db.collection("tranzila-demo-intents").doc(paymentId);
+        const intentSnap = await intentRef.get();
+        if (!intentSnap.exists) return { ok: false, status: 404, message: "unknown demo payment" };
+
+        await intentRef.update({
+            status: approved ? "approved" : "failed",
+            responseCode: responseCode || null,
+            notifyPayload: params,
+            processedAt: new Date(),
+        });
+
+        return { ok: true, status: 200, message: "OK" };
+    }
+
+    /**
      * Create a Tranzila "payment intent" for a FAMILY MEMBER (hosted iframe flow, v4).
      * Mirrors createStripeMemberPaymentIntent — same params from the app, same beneficiary
      * resolution, same metadata — but returns the hosted-page iframe URL instead of a Stripe
