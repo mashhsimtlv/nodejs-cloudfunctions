@@ -17,7 +17,7 @@ const { getMainToken, getToken } = require("../helpers/generalSettings");
 const { manualMemberId, isPlaceholderUid } = require("../helpers/familyMembers");
 const callingCredentialsService = require("./callingCredentialsService");
 const { models } = require("../models"); // Sequelize models
-const { sequelize, Transaction, UnpaidUser, CallNumber, UserCallerNumber, User, FamilyMember, BlockedEmail } = require("../models");
+const { sequelize, Transaction, UnpaidUser, UnpaidTransaction, CallNumber, UserCallerNumber, User, FamilyMember, BlockedEmail } = require("../models");
 // const User = models.User || models.user; // optional MySQL/Mongo user model
 const ExcelJS = require("exceljs");
 
@@ -703,6 +703,27 @@ class PaymentService {
         }, delay);
     }
 
+    /**
+     * Every create*PaymentIntent controller writes an UnpaidTransaction row the
+     * moment the intent is created (paymentController.js), to track abandoned
+     * checkouts — but nothing ever marked it paid once the webhook actually
+     * confirmed success, so every successful Stripe purchase sat showing
+     * "unpaid" in the CRM forever, indistinguishable from a real abandoned one.
+     * Call this once a save*Transaction function's own Transaction row is
+     * confirmed created. Never throws into the webhook — a missing row (no
+     * UnpaidTransaction was ever written for this intent) is not an error.
+     */
+    async markUnpaidTransactionPaid(transactionId) {
+        try {
+            await UnpaidTransaction.update(
+                { status: "paid" },
+                { where: { transaction_id: transactionId } }
+            );
+        } catch (err) {
+            console.log("markUnpaidTransactionPaid: failed (non-fatal)", { transactionId, error: err.message });
+        }
+    }
+
     async storeUnpaidTransaction({ userId, transactionId, user }) {
         if (!userId || !transactionId) return;
 
@@ -763,6 +784,8 @@ class PaymentService {
                 console.log("Duplicate transaction ignored:", id);
                 return;
             }
+
+            await this.markUnpaidTransactionPaid(id);
 
             // Check if transaction already exists
             const txRef = db.collection("transactions").where("transactionId", "==", id).limit(1);
@@ -1523,6 +1546,8 @@ class PaymentService {
                 return;
             }
 
+            await this.markUnpaidTransactionPaid(id);
+
             const txRef = db.collection("transactions").where("transactionId", "==", id).limit(1);
             const txSnap = await txRef.get();
             if (!txSnap.empty) {
@@ -2209,6 +2234,8 @@ class PaymentService {
                 console.log("Duplicate Stripe calling transaction ignored:", id);
                 return;
             }
+
+            await this.markUnpaidTransactionPaid(id);
 
             const startTime = metadata.startDate ? new Date(metadata.startDate) : new Date(created * 1000);
             const endTime = metadata.endDate ? new Date(metadata.endDate) : null;
