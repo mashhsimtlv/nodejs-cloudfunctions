@@ -294,8 +294,6 @@ exports.getAllTags = async (req, res) => {
 exports.getAllConversation = async (req, res) => {
     const body = req.body;
 
-    console.log(" Webhook Received:", JSON.stringify(body, null, 2));
-
     try {
         const payload = {
             googleId: body?.contact?.id ? String(body.contact.id) : null,
