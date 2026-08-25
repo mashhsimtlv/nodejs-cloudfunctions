@@ -674,6 +674,12 @@ exports.updateCallingFcm = async (req, res) => {
         const { firebaseAuthUid } = req.params;
         const fcmToken = req.body.firebase_uid;
 
+        console.log("updateCallingFcm: called", {
+            at: new Date().toISOString(),
+            firebaseAuthUid,
+            hasFcmToken: !!fcmToken,
+        });
+
         if (!firebaseAuthUid) {
             return res.status(400).json({ error: "firebaseAuthUid is required" });
         }
@@ -682,6 +688,8 @@ exports.updateCallingFcm = async (req, res) => {
         }
 
         const result = await paymentService.updateCallingFcmToken({ firebaseAuthUid, fcmToken });
+
+        console.log("updateCallingFcm: done", { at: new Date().toISOString(), firebaseAuthUid, result });
 
         return res.json({ success: true, ...result });
     } catch (err) {
