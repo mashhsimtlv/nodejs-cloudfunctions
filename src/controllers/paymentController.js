@@ -711,25 +711,23 @@ exports.getCallingCredentialsByUser = async (req, res) => {
     }
 };
 
+// NOTE: this endpoint only syncs calling_credentials for firebaseAuthUid — it must
+// never write app-registered-users.fcmToken. That field is owned exclusively by the
+// mobile app's own FCM registration path.
 exports.updateCallingFcm = async (req, res) => {
     try {
         const { firebaseAuthUid } = req.params;
-        const fcmToken = req.body.firebase_uid;
 
         console.log("updateCallingFcm: called", {
             at: new Date().toISOString(),
             firebaseAuthUid,
-            hasFcmToken: !!fcmToken,
         });
 
         if (!firebaseAuthUid) {
             return res.status(400).json({ error: "firebaseAuthUid is required" });
         }
-        if (!fcmToken) {
-            return res.status(400).json({ error: "firebase_uid (FCM device token) is required in the request body" });
-        }
 
-        const result = await paymentService.updateCallingFcmToken({ firebaseAuthUid, fcmToken });
+        const result = await paymentService.updateCallingFcmToken({ firebaseAuthUid });
 
         console.log("updateCallingFcm: done", { at: new Date().toISOString(), firebaseAuthUid, result });
 

@@ -2376,19 +2376,18 @@ class PaymentService {
     }
 
     /**
-     * Update a user's FCM device token (app-registered-users.fcmToken, same field
-     * notificationService/referral code already reads) and, if they have an active
-     * calling number, sync it to the Asterisk box's calling_credentials table so the
-     * dialplan (CALLING_CRED_UID / firebase_lookup.php) can resolve the owning uid.
-     * user_caller_numbers.user_id already IS the Firebase uid (see assignCallingNumber
-     * below) — there is no separate MySQL "users" table in this project to join through.
+     * If a user has an active calling number, sync their uid to the Asterisk box's
+     * calling_credentials table so the dialplan (CALLING_CRED_UID / firebase_lookup.php)
+     * can resolve the owning uid. user_caller_numbers.user_id already IS the Firebase
+     * uid (see assignCallingNumber below) — there is no separate MySQL "users" table
+     * in this project to join through.
+     *
+     * Does NOT touch app-registered-users.fcmToken — that field is owned exclusively
+     * by the mobile app's own FCM registration path. This endpoint must never write it.
      */
-    async updateCallingFcmToken({ firebaseAuthUid, fcmToken }) {
+    async updateCallingFcmToken({ firebaseAuthUid }) {
         if (!firebaseAuthUid) {
             throw new Error("firebaseAuthUid is required");
-        }
-        if (!fcmToken) {
-            throw new Error("firebase_uid (FCM device token) is required in the request body");
         }
 
         const userRef = db.collection("app-registered-users").doc(firebaseAuthUid);
@@ -2396,9 +2395,6 @@ class PaymentService {
         if (!userSnap.exists) {
             throw new Error("User not found");
         }
-
-        await userRef.update({ fcmToken });
-        console.log("updateCallingFcmToken: fcmToken updated", { firebaseAuthUid });
 
         const now = new Date();
         const mapping = await UserCallerNumber.findOne({
@@ -2415,7 +2411,7 @@ class PaymentService {
 
         if (!mapping || !mapping.callingNumber) {
             console.log("updateCallingFcmToken: no active calling number for user", { firebaseAuthUid });
-            return { fcmUpdated: true, callingSynced: false };
+            return { callingSynced: false };
         }
 
         try {
@@ -2428,11 +2424,10 @@ class PaymentService {
                 firebaseAuthUid,
                 number: mapping.callingNumber.number,
             });
-            return { fcmUpdated: true, callingSynced: true, number: mapping.callingNumber.number };
+            return { callingSynced: true, number: mapping.callingNumber.number };
         } catch (err) {
-            // Fail-open: the FCM token is already saved regardless of Asterisk DB reachability.
             console.error("❌ updateCallingFcmToken: calling_credentials sync failed", err.message);
-            return { fcmUpdated: true, callingSynced: false, syncError: err.message };
+            return { callingSynced: false, syncError: err.message };
         }
     }
 
