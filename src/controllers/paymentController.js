@@ -66,6 +66,21 @@ exports.createStripePaymentIntent = async (req, res) => {
         minutes,
     });
 
+    // Same "first payment" check already used by the Stripe/Tranzila webhooks
+    // (see paymentService.saveStripeTransaction) — a user with no prior row in
+    // the Firestore "transactions" collection hasn't completed a purchase yet.
+    let isFirstPurchase = false;
+    try {
+        const previousTxSnap = await db
+            .collection("transactions")
+            .where("userId", "==", userId)
+            .limit(1)
+            .get();
+        isFirstPurchase = previousTxSnap.empty;
+    } catch (firstPurchaseErr) {
+        console.error("❌ [is_first_purchase] Failed to compute:", firstPurchaseErr.message);
+    }
+
     // Save to UnpaidTransaction table
     try {
         const userRef = db.collection("app-registered-users").doc(userId);
@@ -80,6 +95,7 @@ exports.createStripePaymentIntent = async (req, res) => {
             status: "unpaid",
             page_source: req.body.page_source || paymentFor || productType || null,
             amount: String(amount),
+            is_first_purchase: isFirstPurchase,
         });
         console.log("✅ [UnpaidTransaction] Saved record for intent:", intent.id);
     } catch (saveErr) {
@@ -107,11 +123,12 @@ exports.createStripePaymentIntent = async (req, res) => {
         productType,
         paymentType,
         clientSecret: intent.client_secret,
+        isFirstPurchase,
     });
 
     console.log(amount, "amount for intent")
 
-    res.json({ clientSecret: intent.client_secret });
+    res.json({ clientSecret: intent.client_secret, is_first_purchase: isFirstPurchase });
     // } catch (err) {
     //     logger.error("Stripe payment intent failed", { error: err.message });
     //     res.status(500).json({ error: err.message });

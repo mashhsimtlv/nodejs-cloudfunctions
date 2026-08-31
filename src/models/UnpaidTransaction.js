@@ -13,6 +13,7 @@ module.exports = class UnpaidTransaction extends Model {
                 status: { type: DataTypes.STRING(64), allowNull: false },
                 page_source: { type: DataTypes.STRING(255), allowNull: true },
                 amount: { type: DataTypes.STRING(255), allowNull: true },
+                is_first_purchase: { type: DataTypes.BOOLEAN, allowNull: true },
             },
             {
                 sequelize,
