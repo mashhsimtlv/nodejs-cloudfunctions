@@ -294,6 +294,24 @@ exports.getAllTags = async (req, res) => {
 exports.getAllConversation = async (req, res) => {
     const body = req.body;
 
+    // Forward received webhook payload to Grokbot webhook URL
+    const grokbotWebhookUrl = process.env.GROKBOT_WEBHOOK_URL;
+    if (grokbotWebhookUrl && grokbotWebhookUrl.startsWith("http")) {
+        try {
+            await axios.post(grokbotWebhookUrl, body, {
+                headers: { "Content-Type": "application/json" },
+                timeout: 5000,
+            });
+        } catch (error) {
+            logger.error("Failed to forward webhook to Grokbot:", {
+                error: error.message,
+                status: error.response?.status,
+            });
+        }
+    } else if (grokbotWebhookUrl) {
+        logger.warn("Invalid GROKBOT_WEBHOOK_URL configured (must start with http/https)");
+    }
+
     try {
         const payload = {
             googleId: body?.contact?.id ? String(body.contact.id) : null,
