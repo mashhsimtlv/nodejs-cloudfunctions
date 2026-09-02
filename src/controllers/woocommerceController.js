@@ -297,9 +297,20 @@ exports.getAllConversation = async (req, res) => {
     // Forward received webhook payload to Grokbot webhook URL
     const grokbotWebhookUrl = process.env.GROKBOT_WEBHOOK_URL;
     if (grokbotWebhookUrl && grokbotWebhookUrl.startsWith("http")) {
+        const grokbotToken =
+            process.env.GROKBOT_API_TOKEN ||
+            process.env.GROKBOT_BEARER_TOKEN ||
+            process.env.GROKBOT_TOKEN;
+        const headers = {
+            "Content-Type": "application/json",
+        };
+        if (grokbotToken) {
+            headers["Authorization"] = `Bearer ${grokbotToken}`;
+        }
+
         try {
             await axios.post(grokbotWebhookUrl, body, {
-                headers: { "Content-Type": "application/json" },
+                headers,
                 timeout: 5000,
             });
         } catch (error) {
