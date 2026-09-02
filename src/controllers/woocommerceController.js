@@ -309,18 +309,31 @@ exports.getAllConversation = async (req, res) => {
         }
 
         try {
-            await axios.post(grokbotWebhookUrl, body, {
+            console.log("Sending webhook request to Grokbot:", grokbotWebhookUrl);
+            const grokbotResponse = await axios.post(grokbotWebhookUrl, body, {
                 headers,
                 timeout: 5000,
             });
+            console.log("Grokbot webhook request sent successfully:", {
+                status: grokbotResponse?.status,
+                data: grokbotResponse?.data,
+            });
         } catch (error) {
+            console.log("Grokbot webhook request failed:", {
+                error: error.message,
+                status: error.response?.status,
+                data: error.response?.data,
+            });
             logger.error("Failed to forward webhook to Grokbot:", {
                 error: error.message,
                 status: error.response?.status,
             });
         }
     } else if (grokbotWebhookUrl) {
+        console.log("Grokbot webhook request not sent: Invalid URL (must start with http/https):", grokbotWebhookUrl);
         logger.warn("Invalid GROKBOT_WEBHOOK_URL configured (must start with http/https)");
+    } else {
+        console.log("Grokbot webhook request not sent: GROKBOT_WEBHOOK_URL is not set");
     }
 
     try {
