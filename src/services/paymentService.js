@@ -72,23 +72,23 @@ class PaymentService {
 
         // paymentBlocked is owned by MySQL. The uid stored there is the
         // Firebase uid supplied as userId; do not read this flag from Firestore.
-        // const [mysqlUser] = await sequelize.query(
-        //     "SELECT `paymentBlocked` FROM `users` WHERE `uid` = :uid LIMIT 1",
-        //     {
-        //         replacements: { uid: userId },
-        //         type: Sequelize.QueryTypes.SELECT,
-        //     }
-        // );
-        // const paymentBlocked = mysqlUser && (
-        //     mysqlUser.paymentBlocked === true ||
-        //     mysqlUser.paymentBlocked === 1 ||
-        //     mysqlUser.paymentBlocked === "1"
-        // );
-        //
-        // if (paymentBlocked) {
-        //     console.log("Blocked payment intent for flagged user:", { userId, email });
-        //     return { blocked: true, message: "Payments are not allowed for this account." };
-        // }
+        const [mysqlUser] = await sequelize.query(
+            "SELECT `paymentBlocked` FROM `users` WHERE `uid` = :uid LIMIT 1",
+            {
+                replacements: { uid: userId },
+                type: Sequelize.QueryTypes.SELECT,
+            }
+        );
+        const paymentBlocked = mysqlUser && (
+            mysqlUser.paymentBlocked === true ||
+            mysqlUser.paymentBlocked === 1 ||
+            mysqlUser.paymentBlocked === "1"
+        );
+
+        if (paymentBlocked) {
+            console.log("Blocked payment intent for flagged user:", { userId, email });
+            return { blocked: true, message: "Payments are not allowed for this account." };
+        }
 
         // ✅ Block emails matching a pattern in the blocked_emails table
         if (email) {
