@@ -70,19 +70,21 @@ class PaymentService {
         const email = (user.email || "").toLowerCase();
         console.log("Fetched user:", { userId, email });
 
-        // paymentBlocked is owned by MySQL. The uid stored there is the
-        // Firebase uid supplied as userId; do not read this flag from Firestore.
+        // is_blocked_payment_intent is owned by MySQL (the `users` table has no `paymentBlocked`
+        // column — that was the wrong name and crashed every payment intent request). The uid
+        // stored there is the Firebase uid supplied as userId; do not read this flag from
+        // Firestore.
         const [mysqlUser] = await sequelize.query(
-            "SELECT `paymentBlocked` FROM `users` WHERE `uid` = :uid LIMIT 1",
+            "SELECT `is_blocked_payment_intent` FROM `users` WHERE `uid` = :uid LIMIT 1",
             {
                 replacements: { uid: userId },
                 type: Sequelize.QueryTypes.SELECT,
             }
         );
         const paymentBlocked = mysqlUser && (
-            mysqlUser.paymentBlocked === true ||
-            mysqlUser.paymentBlocked === 1 ||
-            mysqlUser.paymentBlocked === "1"
+            mysqlUser.is_blocked_payment_intent === true ||
+            mysqlUser.is_blocked_payment_intent === 1 ||
+            mysqlUser.is_blocked_payment_intent === "1"
         );
 
         if (paymentBlocked) {
@@ -90,15 +92,22 @@ class PaymentService {
             return { blocked: true, message: "Payments are not allowed for this account." };
         }
 
-        // ✅ Block emails matching a pattern in the blocked_emails table
+        // ✅ Block emails matching a pattern in the blocked_emails table.
+        // Fail-open on error (e.g. the table isn't provisioned yet) — this is a secondary
+        // anti-fraud check, not the primary gate above, and a broken check here must not take
+        // down every payment intent request the way it did before.
         if (email) {
-            const blockedEntry = await BlockedEmail.findOne({
-                where: Sequelize.literal(`:email LIKE CONCAT('%', pattern, '%')`),
-                replacements: { email },
-            });
-            if (blockedEntry) {
-                console.log("Blocked payment intent for blocked email pattern:", { userId, email, pattern: blockedEntry.pattern });
-                return { blocked: true, message: "Payments are not allowed for this email domain." };
+            try {
+                const blockedEntry = await BlockedEmail.findOne({
+                    where: Sequelize.literal(`:email LIKE CONCAT('%', pattern, '%')`),
+                    replacements: { email },
+                });
+                if (blockedEntry) {
+                    console.log("Blocked payment intent for blocked email pattern:", { userId, email, pattern: blockedEntry.pattern });
+                    return { blocked: true, message: "Payments are not allowed for this email domain." };
+                }
+            } catch (err) {
+                console.error("BlockedEmail check failed, allowing payment to proceed:", err.message);
             }
         }
 
