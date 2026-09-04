@@ -66,6 +66,10 @@ exports.createStripePaymentIntent = async (req, res) => {
         minutes,
     });
 
+    if (intent.blocked) {
+        return res.status(403).json({ error: intent.message });
+    }
+
     // Same "first payment" check already used by the Stripe/Tranzila webhooks
     // (see paymentService.saveStripeTransaction) — a user with no prior row in
     // the Firestore "transactions" collection hasn't completed a purchase yet.

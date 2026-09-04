@@ -67,27 +67,39 @@ class PaymentService {
             throw new Error("User not found");
         }
 
-        const email = user.email || "";
+        const email = (user.email || "").toLowerCase();
         console.log("Fetched user:", { userId, email });
 
-        // ✅ Block emails with boticuk.com domain
-        if (email.toLowerCase().includes("@boticuk.com") || email.toLowerCase().includes("@blumai.site") || email.toLowerCase().includes("msjsiee3@gmail.com") || email.toLowerCase().includes("tutu68863@gmail.com") || email.toLowerCase().includes("rendrapramuja@gmail.com")
-            || email.toLowerCase().includes("berkahjayaelektronik55@gmail.com")
-            || email.toLowerCase().includes("diriku462@gmail.com")
-            || email.toLowerCase().includes("jajarijajari0@gmail.com")
-            || email.toLowerCase().includes("gaha85712@gmail.com")
-            || email.toLowerCase().includes("budihartono9110@gmail.com")
-            || email.toLowerCase().includes("megabajabintaro540@gmail.com")
-            || email.toLowerCase().includes("stokcilzsuga8@gmail.com")
-            || email.toLowerCase().includes("adirojak883@gmail.com")
-            || email.toLowerCase().includes("zeaardelia9@gmail.com")
-            || email.toLowerCase().includes("reada1370@gmail.com")
-            || email.toLowerCase().includes("nathel.0101@gmail.com")
-            || email.toLowerCase().includes("barubaru45600@gmail.com")
-        ) {
-            //if (email.toLowerCase().includes("@gmail.com")) {
-            console.log("Blocked payment intent for boticuk.com domain:", email);
-            return { blocked: true, message: "Payments are not allowed for this email domain." };
+        // paymentBlocked is owned by MySQL. The uid stored there is the
+        // Firebase uid supplied as userId; do not read this flag from Firestore.
+        const [mysqlUser] = await sequelize.query(
+            "SELECT `paymentBlocked` FROM `users` WHERE `uid` = :uid LIMIT 1",
+            {
+                replacements: { uid: userId },
+                type: Sequelize.QueryTypes.SELECT,
+            }
+        );
+        const paymentBlocked = mysqlUser && (
+            mysqlUser.paymentBlocked === true ||
+            mysqlUser.paymentBlocked === 1 ||
+            mysqlUser.paymentBlocked === "1"
+        );
+
+        if (paymentBlocked) {
+            console.log("Blocked payment intent for flagged user:", { userId, email });
+            return { blocked: true, message: "Payments are not allowed for this account." };
+        }
+
+        // ✅ Block emails matching a pattern in the blocked_emails table
+        if (email) {
+            const blockedEntry = await BlockedEmail.findOne({
+                where: Sequelize.literal(`:email LIKE CONCAT('%', pattern, '%')`),
+                replacements: { email },
+            });
+            if (blockedEntry) {
+                console.log("Blocked payment intent for blocked email pattern:", { userId, email, pattern: blockedEntry.pattern });
+                return { blocked: true, message: "Payments are not allowed for this email domain." };
+            }
         }
 
         console.log(amount, "stripe payment")
