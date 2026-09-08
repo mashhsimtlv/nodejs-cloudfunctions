@@ -74,6 +74,29 @@ const emitContactTagEvent = (io, tagData, targetUserIds = []) => {
     });
 };
 
+// respond.io user id that, when mentioned/tagged on a comment, should also forward the
+// webhook to the Cursor background-agent automation below.
+const COMMENT_WEBHOOK_TARGET_USER_ID =
+    process.env.COMMENT_WEBHOOK_TARGET_USER_ID || "292253";
+
+const forwardCommentWebhookToCursor = async (body) => {
+    const cursorWebhookUrl = process.env.CURSOR_COMMENT_WEBHOOK_URL;
+    if (!cursorWebhookUrl || !cursorWebhookUrl.startsWith("http")) return;
+
+    const cursorToken = process.env.CURSOR_COMMENT_WEBHOOK_TOKEN;
+    const headers = { "Content-Type": "application/json" };
+    if (cursorToken) headers["Authorization"] = `Bearer ${cursorToken}`;
+
+    try {
+        console.log("Sending comment webhook to Cursor:", cursorWebhookUrl);
+        const resp = await axios.post(cursorWebhookUrl, body, { headers, timeout: 5000 });
+        console.log("Cursor comment webhook sent successfully:", { status: resp?.status, data: resp?.data });
+    } catch (error) {
+        console.log("Cursor comment webhook failed:", { error: error.message, status: error.response?.status });
+        logger.error("Failed to forward comment webhook to Cursor:", { error: error.message, status: error.response?.status });
+    }
+};
+
 const extractRefCode = (message) => {
     if (!message || typeof message !== "string") {
         return null;
