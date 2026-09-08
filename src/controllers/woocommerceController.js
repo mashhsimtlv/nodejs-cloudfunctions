@@ -278,6 +278,10 @@ exports.getAllTags = async (req, res) => {
             ? body.mentionedUserEmails.map((email) => String(email))
             : [];
 
+        if (mentionedUserIds.includes(COMMENT_WEBHOOK_TARGET_USER_ID)) {
+            await forwardCommentWebhookToCursor(body);
+        }
+
         const recordPayload = buildContactTagRecord({
             body,
             contact,
