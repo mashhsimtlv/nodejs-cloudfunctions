@@ -74,10 +74,15 @@ const emitContactTagEvent = (io, tagData, targetUserIds = []) => {
     });
 };
 
-// respond.io user id that, when mentioned/tagged on a comment, should also forward the
+// respond.io user ids that, when mentioned/tagged on a comment, should also forward the
 // webhook to the Cursor background-agent automation below.
-const COMMENT_WEBHOOK_TARGET_USER_ID =
-    process.env.COMMENT_WEBHOOK_TARGET_USER_ID || "292253";
+// 292253 = dor@simtlv.co.il, 1198056 = AI SIMTLV (gbsimtlv@gmail.com)
+const COMMENT_WEBHOOK_TARGET_USER_IDS = (
+    process.env.COMMENT_WEBHOOK_TARGET_USER_IDS || "292253,1198056"
+)
+    .split(",")
+    .map((id) => id.trim())
+    .filter(Boolean);
 
 const forwardCommentWebhookToCursor = async (body) => {
     const cursorWebhookUrl = process.env.CURSOR_COMMENT_WEBHOOK_URL;
@@ -278,7 +283,7 @@ exports.getAllTags = async (req, res) => {
             ? body.mentionedUserEmails.map((email) => String(email))
             : [];
 
-        if (mentionedUserIds.includes(COMMENT_WEBHOOK_TARGET_USER_ID)) {
+        if (mentionedUserIds.some((id) => COMMENT_WEBHOOK_TARGET_USER_IDS.includes(id))) {
             await forwardCommentWebhookToCursor(body);
         }
 
