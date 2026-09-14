@@ -42,7 +42,20 @@ sequelize.authenticate()
     })
     .catch(err => console.log('Error: ' + err));
 
-app.use(bodyParser.json());
+// Stripe/PayPal webhook signature verification needs the untouched raw body.
+// paymentRoutes.js already declares express.raw()/express.json() on those two
+// routes for exactly that reason, but this global parser ran first and consumed
+// the stream before they ever saw it — which is why signature verification was
+// disabled below. Skip the global parser for those two paths so the route-level
+// ones get the real body.
+const RAW_BODY_WEBHOOK_PATHS = new Set([
+    "/api/payments/stripe/webhook",
+    "/api/payments/paypal/webhook",
+]);
+app.use((req, res, next) => {
+    if (RAW_BODY_WEBHOOK_PATHS.has(req.path)) return next();
+    bodyParser.json()(req, res, next);
+});
 
 
 
