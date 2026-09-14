@@ -8,6 +8,7 @@ const admin = require('./../helpers/firebase')
 const db = admin.firestore();
 const eventsAPI = require("./../services/events.service");
 const { sequelize, Transaction, CallNumber, UserCallerNumber, UnpaidTransaction } = require("../models"); // Sequelize models
+const { getPayPalAccessToken } = require("../config/paypal");
 
 /**
  * Safely parse PayPal custom_id (free-text field that may not be valid JSON).
@@ -967,20 +968,16 @@ exports.handleStripeWebhook = async (req, res) => {
     const sig = req.headers["stripe-signature"];
     let event;
 
-    event = req.body;
-
-    // console.log("process.env.STRIPE_WEBHOOK_SECRET" , process.env.STRIPE_WEBHOOK_SECRET , req.body , req.rawBody);
-
-    // try {
-    //     event = stripe.webhooks.constructEvent(
-    //         req.body,
-    //         sig,
-    //         process.env.STRIPE_WEBHOOK_SECRET
-    //     );
-    // } catch (err) {
-    //     console.error("⚠️ Webhook signature verification failed:", err.message);
-    //     return res.status(400).send(`Webhook Error: ${err.message}`);
-    // }
+    try {
+        event = stripe.webhooks.constructEvent(
+            req.body,
+            sig,
+            process.env.STRIPE_WEBHOOK_SECRET
+        );
+    } catch (err) {
+        console.error("⚠️ Webhook signature verification failed:", err.message);
+        return res.status(400).send(`Webhook Error: ${err.message}`);
+    }
 
     console.log("✅ Stripe webhook verified", { type: event.type });
 
@@ -1094,6 +1091,32 @@ exports.capturePayPalOrder = async (req, res) => {
 exports.handlePayPalWebhook = async (req, res) => {
     try {
         const event = req.body;
+
+        const webhookId = process.env.PAYPAL_WEBHOOK_ID;
+        if (!webhookId) {
+            logger.error("PayPal webhook rejected: PAYPAL_WEBHOOK_ID not configured");
+            return res.status(500).send("Webhook not configured");
+        }
+
+        const accessToken = await getPayPalAccessToken();
+        const verifyResponse = await axios.post(
+            `${process.env.PAYPAL_URL}/v1/notifications/verify-webhook-signature`,
+            {
+                auth_algo: req.headers["paypal-auth-algo"],
+                cert_url: req.headers["paypal-cert-url"],
+                transmission_id: req.headers["paypal-transmission-id"],
+                transmission_sig: req.headers["paypal-transmission-sig"],
+                transmission_time: req.headers["paypal-transmission-time"],
+                webhook_id: webhookId,
+                webhook_event: event,
+            },
+            { headers: { Authorization: `Bearer ${accessToken}` } }
+        );
+
+        if (verifyResponse.data?.verification_status !== "SUCCESS") {
+            logger.error("PayPal webhook signature verification failed", { status: verifyResponse.data?.verification_status });
+            return res.status(400).send("Webhook signature verification failed");
+        }
 
         console.log("PayPal webhook received", { eventType: event.event_type });
 
