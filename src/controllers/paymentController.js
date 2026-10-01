@@ -160,8 +160,17 @@ exports.createTranzilaPaymentIntent = async (req, res) => {
 
     const amount = req.body.amount ? parseInt(req.body.amount) : 10;
 
+    // Tranzila currency code: 1 = ILS, 2 = USD. The app sends what it quoted
+    // the user and verifies the iframe URL echoes it back — dropping it here
+    // caused quoteMismatch whenever TRANZILA_CURRENCY env differed.
+    const currency = req.body.currency != null ? String(req.body.currency) : null;
+    if (currency != null && !["1", "2"].includes(currency)) {
+        return res.status(400).json({ error: "currency must be 1 (ILS) or 2 (USD)" });
+    }
+
     const intent = await paymentService.createTranzilaPaymentIntent({
         amount,
+        currency,
         userId,
         productType,
         paymentType,

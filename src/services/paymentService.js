@@ -146,6 +146,7 @@ class PaymentService {
      */
     async createTranzilaPaymentIntent({
         amount,
+        currency,
         userId,
         productType,
         paymentType,
@@ -213,13 +214,14 @@ class PaymentService {
         await db.collection("tranzila-payment-intents").doc(paymentId).set({
             ...metadata,
             amount, // cents, same unit the Stripe flow uses
+            currency: currency || process.env.TRANZILA_CURRENCY || "2", // what the iframe will actually charge in
             status: "pending",
             createdAt,
         });
 
         return {
             id: paymentId,
-            iframeUrl: this.buildTranzilaIframeUrl({ paymentId, amount, description: productType || paymentFor, successUrl, failUrl }),
+            iframeUrl: this.buildTranzilaIframeUrl({ paymentId, amount, currency, description: productType || paymentFor, successUrl, failUrl }),
         };
     }
 
@@ -227,12 +229,16 @@ class PaymentService {
      * Hosted-page URL for a stored tranzila-payment-intents doc. Shared by the wallet/GigaBoost
      * (v2) and member (v4) flows so terminal, currency and callback wiring can't drift apart.
      */
-    buildTranzilaIframeUrl({ paymentId, amount, description, successUrl, failUrl }) {
+    buildTranzilaIframeUrl({ paymentId, amount, currency, description, successUrl, failUrl }) {
         const terminal = process.env.TRANZILA_TERMINAL;
         const base = process.env.PUBLIC_BASE_URL || "https://cloudapi.simtlv.co.il";
         const params = new URLSearchParams({
             sum: (amount / 100).toFixed(2), // Tranzila wants currency units, not cents
-            currency: process.env.TRANZILA_CURRENCY || "2", // 2 = USD (both flows credit USD), 1 = ILS
+            // The caller's requested currency wins (the app verifies the iframe
+            // echoes exactly what it quoted — ignoring it caused quoteMismatch
+            // whenever TRANZILA_CURRENCY env differed from the quote). Env then
+            // "2" (USD) remain the fallbacks for flows that don't pass one.
+            currency: String(currency || process.env.TRANZILA_CURRENCY || "2"), // 2 = USD, 1 = ILS
             cred_type: "1",
             tranmode: "A",
             pdesc: `SIMTLV ${description || "payment"}`,
