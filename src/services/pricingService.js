@@ -234,10 +234,21 @@ class PricingService {
         });
         const currentBalance = userCallerNumber ? parseFloat(userCallerNumber.current_balance) : 0;
 
-        const where = { src_country: srcCountry, is_active: true };
-        if (dstCountry) where.dst_country = dstCountry.toUpperCase();
-
-        const rates = await CallRouteRate.findAll({ where, order: [["dst_country", "ASC"]] });
+        // Destination prices come from country_call_rates — one USD/min row per
+        // ISO-2 country, generated from the client's full rate sheet (230
+        // countries) by proxy-firebase/generalScripts/generateCountryCallRates.js.
+        // Replaces the old call_route_rates pairs that only covered IL/US/UK.
+        const replacements = {};
+        let destSql = `SELECT iso2, usd_per_min FROM country_call_rates WHERE is_active = 1`;
+        if (dstCountry) {
+            destSql += ` AND iso2 = :iso2`;
+            replacements.iso2 = dstCountry.toUpperCase();
+        }
+        destSql += ` ORDER BY iso2 ASC`;
+        const rates = await CallRouteRate.sequelize.query(destSql, {
+            replacements,
+            type: CallRouteRate.sequelize.QueryTypes.SELECT,
+        });
 
         const planRate = parseFloat(plan.per_minute_rate);
         const remainingMinutes = planRate > 0 ? Math.floor(currentBalance / planRate) : 0;
@@ -251,12 +262,12 @@ class PricingService {
                 remaining_minutes: remainingMinutes,
             },
             destinations: rates.map((r) => {
-                const ratePerMin = parseFloat(r.rate_per_min);
+                const ratePerMin = parseFloat(r.usd_per_min);
                 return {
-                    ...countryInfo(r.dst_country),
+                    ...countryInfo(r.iso2),
                     per_min_price: ratePerMin,
-                    currency: r.currency || "USD",
-                    available_minutes: Math.floor(currentBalance / ratePerMin),
+                    currency: "USD",
+                    available_minutes: ratePerMin > 0 ? Math.floor(currentBalance / ratePerMin) : 0,
                 };
             }),
         };
