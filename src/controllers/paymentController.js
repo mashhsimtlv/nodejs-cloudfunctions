@@ -722,6 +722,14 @@ exports.getCallingCredentialsByUser = async (req, res) => {
             order: [["createdAt", "DESC"]],
         });
 
+        // The app persists current_balance and shows it verbatim as "Coins"
+        // (its usd→coins factor is hardcoded to 1 in the shipped build), so
+        // the conversion to coins happens here: 1 coin = ₪0.20 at ₪3.00/$.
+        // DB balances and billing stay in USD; current_balance_usd carries the
+        // raw value for any consumer that needs money.
+        const USD_PER_COIN = parseFloat(process.env.USD_PER_COIN || String(0.20 / 3.0));
+        const toCoins = (usd) => Math.round((parseFloat(usd || 0) / USD_PER_COIN) * 10) / 10;
+
         const data = mappings
             .filter((m) => m.callingNumber)
             .map((m) => ({
@@ -732,7 +740,8 @@ exports.getCallingCredentialsByUser = async (req, res) => {
                 extension: m.callingNumber.extension,
                 start_time: m.start_time,
                 end_time: m.end_time,
-                current_balance: m.current_balance,
+                current_balance: toCoins(m.current_balance),
+                current_balance_usd: m.current_balance,
             }));
 
         return res.json({ success: true, data });

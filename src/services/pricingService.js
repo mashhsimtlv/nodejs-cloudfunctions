@@ -266,9 +266,14 @@ class PricingService {
             plan: {
                 minutes_option: plan.minutes_option,
                 credit_value: parseFloat(plan.credit_value),
-                current_balance: currentBalance,
-                // What the app should display (client's coins-only rule):
-                balance_coins: balanceCoins,
+                // COINS in the existing field: the shipped app build renders
+                // these values verbatim under a "Coins" label (its own
+                // usd→coins multiplier is hardcoded to 1), and mobile cannot
+                // ship a new build right now — so the display unit has to be
+                // delivered server-side. USD kept alongside for the backend's
+                // own consumers and future app builds.
+                current_balance: balanceCoins,
+                current_balance_usd: currentBalance,
                 usd_per_coin: USD_PER_COIN,
                 remaining_minutes: remainingMinutes,
             },
@@ -277,11 +282,12 @@ class PricingService {
                 const coinsPerMin = parseFloat(r.coins_per_min);
                 return {
                     ...countryInfo(r.iso2),
-                    // Display unit: coins (Israel = 1.0). The USD fields stay
-                    // for back-compat with app builds that still show dollars.
+                    // per_min_price now carries COINS (Israel = 1.0) — see note
+                    // on plan.current_balance above.
+                    per_min_price: coinsPerMin,
+                    usd_per_min: ratePerMin,
                     coins_per_min: coinsPerMin,
-                    per_min_price: ratePerMin,
-                    currency: "USD",
+                    currency: "COIN",
                     available_minutes: coinsPerMin > 0
                         ? Math.floor(balanceCoins / coinsPerMin)
                         : (ratePerMin > 0 ? Math.floor(currentBalance / ratePerMin) : 0),
