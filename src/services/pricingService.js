@@ -234,12 +234,20 @@ class PricingService {
         });
         const currentBalance = userCallerNumber ? parseFloat(userCallerNumber.current_balance) : 0;
 
-        // Destination prices come from country_call_rates — one USD/min row per
-        // ISO-2 country, generated from the client's full rate sheet (230
-        // countries) by proxy-firebase/generalScripts/generateCountryCallRates.js.
-        // Replaces the old call_route_rates pairs that only covered IL/US/UK.
+        // Coin system (client's rate book, rule #1: "the customer sees coins
+        // only — 1 coin = 1 minute to Israel"). Balances are stored in USD;
+        // 1 coin = ₪0.20 at the book's app rate of ₪3.00/$ → $0.0667/coin.
+        // Coins are the DISPLAY unit; billing continues to deduct USD.
+        const USD_PER_COIN = parseFloat(process.env.USD_PER_COIN || String(0.20 / 3.0));
+        const balanceCoins = Math.round((currentBalance / USD_PER_COIN) * 10) / 10;
+
+        // Destination prices come from country_call_rates — one row per ISO-2
+        // country with BOTH units (coins_per_min straight from the client's
+        // sheet, usd_per_min derived), generated from the client's full rate
+        // sheet (230 countries) by
+        // proxy-firebase/generalScripts/generateCountryCallRates.js.
         const replacements = {};
-        let destSql = `SELECT iso2, usd_per_min FROM country_call_rates WHERE is_active = 1`;
+        let destSql = `SELECT iso2, usd_per_min, coins_per_min FROM country_call_rates WHERE is_active = 1`;
         if (dstCountry) {
             destSql += ` AND iso2 = :iso2`;
             replacements.iso2 = dstCountry.toUpperCase();
@@ -259,15 +267,24 @@ class PricingService {
                 minutes_option: plan.minutes_option,
                 credit_value: parseFloat(plan.credit_value),
                 current_balance: currentBalance,
+                // What the app should display (client's coins-only rule):
+                balance_coins: balanceCoins,
+                usd_per_coin: USD_PER_COIN,
                 remaining_minutes: remainingMinutes,
             },
             destinations: rates.map((r) => {
                 const ratePerMin = parseFloat(r.usd_per_min);
+                const coinsPerMin = parseFloat(r.coins_per_min);
                 return {
                     ...countryInfo(r.iso2),
+                    // Display unit: coins (Israel = 1.0). The USD fields stay
+                    // for back-compat with app builds that still show dollars.
+                    coins_per_min: coinsPerMin,
                     per_min_price: ratePerMin,
                     currency: "USD",
-                    available_minutes: ratePerMin > 0 ? Math.floor(currentBalance / ratePerMin) : 0,
+                    available_minutes: coinsPerMin > 0
+                        ? Math.floor(balanceCoins / coinsPerMin)
+                        : (ratePerMin > 0 ? Math.floor(currentBalance / ratePerMin) : 0),
                 };
             }),
         };
