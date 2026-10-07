@@ -24,6 +24,15 @@ function safeJsonParse(value) {
     }
 }
 
+/**
+ * The webhook flows compare productType with ===, e.g. "GigaBoost". The Tranzila app build
+ * sends "gigaboost", which silently fell through to the wallet top-up branch.
+ */
+function normalizeProductType(productType) {
+    if (typeof productType !== "string") return productType;
+    return productType.trim().toLowerCase() === "gigaboost" ? "GigaBoost" : productType;
+}
+
 
 
 
@@ -156,7 +165,8 @@ exports.createTranzilaPaymentIntent = async (req, res) => {
 
     console.log("Client IP:", ip);
 
-    const { userId, productType, paymentType, planName, planId, device_id, paymentFor, country, minutes, success_url, fail_url } = req.body;
+    const { userId, paymentType, planName, planId, device_id, paymentFor, country, minutes, success_url, fail_url } = req.body;
+    const productType = normalizeProductType(req.body.productType);
 
     const amount = req.body.amount ? parseInt(req.body.amount) : 10;
 
@@ -238,7 +248,8 @@ exports.createTranzilaMemberPaymentIntent = async (req, res) => {
 
     console.log("Client IP:", ip);
 
-    const { productType, paymentType, planName, planId, device_id, paymentFor, country, minutes, success_url, fail_url } = req.body;
+    const { paymentType, planName, planId, device_id, paymentFor, country, minutes, success_url, fail_url } = req.body;
+    const productType = normalizeProductType(req.body.productType);
 
     // Same aliases the Stripe member endpoint accepts — see createStripeMemberPaymentIntent.
     const userId = req.body.parent_uid || req.body.parentUid || req.body.userId;
