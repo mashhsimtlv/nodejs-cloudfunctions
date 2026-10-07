@@ -160,8 +160,17 @@ exports.createTranzilaPaymentIntent = async (req, res) => {
 
     const amount = req.body.amount ? parseInt(req.body.amount) : 10;
 
+    // Tranzila currency code: 1 = ILS, 2 = USD. The app sends what it quoted
+    // the user and verifies the iframe URL echoes it back — dropping it here
+    // caused quoteMismatch whenever TRANZILA_CURRENCY env differed.
+    const currency = req.body.currency != null ? String(req.body.currency) : null;
+    if (currency != null && !["1", "2"].includes(currency)) {
+        return res.status(400).json({ error: "currency must be 1 (ILS) or 2 (USD)" });
+    }
+
     const intent = await paymentService.createTranzilaPaymentIntent({
         amount,
+        currency,
         userId,
         productType,
         paymentType,
@@ -327,6 +336,102 @@ exports.handleTranzilaNotify = async (req, res) => {
         console.error("❌ Tranzila notify processing failed:", err.message);
         logger.error("Tranzila notify failed", { error: err.message });
         return res.status(500).send(`Notify handler failed: ${err.message}`);
+    }
+};
+
+/**
+ * Handle Tranzila Webhooks (notify_url_address) — the Tranzila counterpart of
+ * handleStripeWebhook: verify, then dispatch on flowVersion into the same
+ * save*Transaction pipelines. Tranzila posts form-encoded.
+ */
+exports.handleTranzilaWebhook = async (req, res) => {
+    const params = { ...req.query, ...(req.body || {}) };
+    console.log("[TRANZILA WEBHOOK] hit from", req.headers["x-forwarded-for"] || req.socket?.remoteAddress || "unknown ip");
+    console.log("[TRANZILA WEBHOOK] payload:", JSON.stringify(params));
+
+    // Optional allowlist of Tranzila's notify servers (comma-separated IPs).
+    const allowed = (process.env.TRANZILA_NOTIFY_IPS || "").split(",").map((s) => s.trim()).filter(Boolean);
+    if (allowed.length) {
+        const ip = String(req.headers["x-forwarded-for"] || req.socket?.remoteAddress || "").split(",")[0].trim().replace(/^::ffff:/, "");
+        if (!allowed.includes(ip)) {
+            console.error("⚠️ Tranzila webhook rejected — IP not allowlisted:", ip);
+            return res.status(403).send("Forbidden");
+        }
+    }
+
+    let claim;
+    try {
+        claim = await paymentService.claimTranzilaNotify(params);
+    } catch (err) {
+        console.error("❌ Tranzila webhook verification failed:", err.message);
+        logger.error("Tranzila webhook verification failed", { error: err.message, paymentId: params.payment_id });
+        return res.status(500).send(`Webhook Error: ${err.message}`);
+    }
+
+    if (!claim.paymentIntent) {
+        return res.status(claim.result.status).send(claim.result.message);
+    }
+
+    const paymentIntent = claim.paymentIntent;
+    console.log("✅ Tranzila webhook verified", { paymentId: paymentIntent.id, flowVersion: paymentIntent.metadata?.flowVersion || "v2" });
+
+    try {
+        await paymentService.dispatchTranzilaPayment(paymentIntent, req.app.get("io"));
+        await paymentService.markTranzilaIntent(paymentIntent.id, "approved");
+        res.send({ received: true });
+    } catch (err) {
+        await paymentService.markTranzilaIntent(paymentIntent.id, "error", err.message);
+        console.error("❌ Tranzila webhook processing failed:", err.message);
+        logger.error("Tranzila webhook processing failed", { error: err.message, paymentId: paymentIntent.id });
+        return res.status(500).send(`Webhook handler failed: ${err.message}`);
+    }
+};
+
+/**
+ * Browser landing pages for the Tranzila iframe (success_url_address /
+ * fail_url_address). Tranzila may GET or POST here. They never decide the
+ * payment — the webhook does — they only tell the app/WebView the flow ended.
+ * The app can detect the URL path (/tranzila/success or /tranzila/cancel) and
+ * close the WebView; ?payment_id= is always present.
+ */
+function tranzilaResultPage(kind) {
+    return async (req, res) => {
+        const params = { ...req.query, ...(req.body || {}) };
+        const paymentId = params.payment_id || null;
+        console.log(`[TRANZILA ${kind.toUpperCase()}] redirect`, { paymentId, response: params.Response ?? null });
+
+        let status = null;
+        try {
+            status = (await paymentService.getTranzilaIntentStatus(paymentId))?.status ?? null;
+        } catch (err) {
+            console.error(`[TRANZILA ${kind.toUpperCase()}] status lookup failed:`, err.message);
+        }
+
+        if ((req.headers.accept || "").includes("application/json")) {
+            return res.json({ result: kind, paymentId, status });
+        }
+        const ok = kind === "success";
+        res.set("Content-Type", "text/html; charset=utf-8").send(`<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>${ok ? "Payment received" : "Payment cancelled"}</title></head>
+<body style="font-family:-apple-system,Segoe UI,Arial,sans-serif;display:flex;align-items:center;justify-content:center;min-height:90vh;margin:0;background:#f8fafc;color:#1f2937;text-align:center">
+<div><div style="font-size:48px">${ok ? "✅" : "✖️"}</div>
+<h2>${ok ? "Payment received" : "Payment cancelled"}</h2>
+<p style="color:#64748b">${ok ? "Your purchase is being completed. You can return to the app." : "No charge was made. You can return to the app and try again."}</p></div>
+</body></html>`);
+    };
+}
+exports.tranzilaSuccess = tranzilaResultPage("success");
+exports.tranzilaCancel = tranzilaResultPage("cancel");
+
+/** GET /tranzila/status/:paymentId — lets the app poll the outcome after the iframe closes. */
+exports.getTranzilaPaymentStatus = async (req, res) => {
+    try {
+        const status = await paymentService.getTranzilaIntentStatus(req.params.paymentId);
+        if (!status) return res.status(404).json({ error: "unknown payment" });
+        return res.json(status);
+    } catch (err) {
+        return res.status(500).json({ error: err.message });
     }
 };
 
@@ -713,6 +818,14 @@ exports.getCallingCredentialsByUser = async (req, res) => {
             order: [["createdAt", "DESC"]],
         });
 
+        // The app persists current_balance and shows it verbatim as "Coins"
+        // (its usd→coins factor is hardcoded to 1 in the shipped build), so
+        // the conversion to coins happens here: 1 coin = ₪0.20 at ₪3.00/$.
+        // DB balances and billing stay in USD; current_balance_usd carries the
+        // raw value for any consumer that needs money.
+        const USD_PER_COIN = parseFloat(process.env.USD_PER_COIN || String(0.20 / 3.0));
+        const toCoins = (usd) => Math.round((parseFloat(usd || 0) / USD_PER_COIN) * 10) / 10;
+
         const data = mappings
             .filter((m) => m.callingNumber)
             .map((m) => ({
@@ -723,7 +836,8 @@ exports.getCallingCredentialsByUser = async (req, res) => {
                 extension: m.callingNumber.extension,
                 start_time: m.start_time,
                 end_time: m.end_time,
-                current_balance: m.current_balance,
+                current_balance: toCoins(m.current_balance),
+                current_balance_usd: m.current_balance,
             }));
 
         return res.json({ success: true, data });

@@ -146,6 +146,7 @@ class PaymentService {
      */
     async createTranzilaPaymentIntent({
         amount,
+        currency,
         userId,
         productType,
         paymentType,
@@ -213,13 +214,14 @@ class PaymentService {
         await db.collection("tranzila-payment-intents").doc(paymentId).set({
             ...metadata,
             amount, // cents, same unit the Stripe flow uses
+            currency: currency || process.env.TRANZILA_CURRENCY || "2", // what the iframe will actually charge in
             status: "pending",
             createdAt,
         });
 
         return {
             id: paymentId,
-            iframeUrl: this.buildTranzilaIframeUrl({ paymentId, amount, description: productType || paymentFor, successUrl, failUrl }),
+            iframeUrl: this.buildTranzilaIframeUrl({ paymentId, amount, currency, description: productType || paymentFor, successUrl, failUrl }),
         };
     }
 
@@ -227,20 +229,25 @@ class PaymentService {
      * Hosted-page URL for a stored tranzila-payment-intents doc. Shared by the wallet/GigaBoost
      * (v2) and member (v4) flows so terminal, currency and callback wiring can't drift apart.
      */
-    buildTranzilaIframeUrl({ paymentId, amount, description, successUrl, failUrl }) {
+    buildTranzilaIframeUrl({ paymentId, amount, currency, description, successUrl, failUrl }) {
         const terminal = process.env.TRANZILA_TERMINAL;
-        const base = process.env.PUBLIC_BASE_URL || "https://cloudapi.simtlv.co.il";
+        // cloudapi.simtlv.co.il has no DNS record — Tranzila could never deliver a notify there.
+        const base = process.env.PUBLIC_BASE_URL || "https://simtlvapp-cf.aridar-crm.com";
         const params = new URLSearchParams({
             sum: (amount / 100).toFixed(2), // Tranzila wants currency units, not cents
-            currency: process.env.TRANZILA_CURRENCY || "2", // 2 = USD (both flows credit USD), 1 = ILS
+            // The caller's requested currency wins (the app verifies the iframe
+            // echoes exactly what it quoted — ignoring it caused quoteMismatch
+            // whenever TRANZILA_CURRENCY env differed from the quote). Env then
+            // "2" (USD) remain the fallbacks for flows that don't pass one.
+            currency: String(currency || process.env.TRANZILA_CURRENCY || "2"), // 2 = USD, 1 = ILS
             cred_type: "1",
             tranmode: "A",
             pdesc: `SIMTLV ${description || "payment"}`,
             payment_id: paymentId, // echoed back in the notify callback
             // Browser redirects only — status is decided by the notify webhook, never by these
-            success_url_address: successUrl || process.env.TRANZILA_SUCCESS_URL || `${base}/payment-result?id=${paymentId}`,
-            fail_url_address: failUrl || process.env.TRANZILA_FAIL_URL || `${base}/payment-result?id=${paymentId}`,
-            notify_url_address: `${base}/api/payments/tranzila/notify`,
+            success_url_address: successUrl || process.env.TRANZILA_SUCCESS_URL || `${base}/api/payments/tranzila/success?payment_id=${paymentId}`,
+            fail_url_address: failUrl || process.env.TRANZILA_FAIL_URL || `${base}/api/payments/tranzila/cancel?payment_id=${paymentId}`,
+            notify_url_address: `${base}/api/payments/tranzila/webhook`,
             u71: "1",
             lang: "us",
             nologo: "1",
@@ -281,7 +288,7 @@ class PaymentService {
         });
 
         const terminal = process.env.TRANZILA_TERMINAL;
-        const base = process.env.PUBLIC_BASE_URL || "https://cloudapi.simtlv.co.il";
+        const base = process.env.PUBLIC_BASE_URL || "https://simtlvapp-cf.aridar-crm.com";
         const params = new URLSearchParams({
             sum: amountIls.toFixed(2),
             currency: "1", // ILS — this demo is priced in shekels regardless of the real flows' USD default
@@ -447,64 +454,130 @@ class PaymentService {
      * synthetic paymentIntent into the same v2 pipeline as Stripe.
      */
     async handleTranzilaNotify(params, io) {
+        const claim = await this.claimTranzilaNotify(params);
+        if (!claim.paymentIntent) return claim.result;
+        try {
+            await this.dispatchTranzilaPayment(claim.paymentIntent, io);
+            await this.markTranzilaIntent(claim.paymentIntent.id, "approved");
+        } catch (err) {
+            await this.markTranzilaIntent(claim.paymentIntent.id, "error", err.message);
+            throw err;
+        }
+        return { ok: true, status: 200, message: "OK" };
+    }
+
+    /**
+     * Validate a Tranzila notify and atomically claim the intent for processing.
+     * Returns { result } when there is nothing to credit (unknown/duplicate/failed/
+     * mismatched), or { paymentIntent } — a Stripe-shaped intent ready to dispatch.
+     *
+     * Two things are verified before any money is credited:
+     *  - the charged sum/currency Tranzila reports must equal what we stored — the
+     *    iframe URL is visible to the payer, who could otherwise edit `sum` down and
+     *    still be credited the full stored amount;
+     *  - the pending → processing flip runs in a Firestore transaction, so two
+     *    concurrent notifies (Tranzila retries) can't both credit.
+     */
+    async claimTranzilaNotify(params) {
         const paymentId = params.payment_id;
         const responseCode = params.Response ?? params.response;
         const approved = responseCode === "000";
 
         if (!paymentId) {
-            return { ok: false, status: 400, message: "missing payment_id" };
+            return { result: { ok: false, status: 400, message: "missing payment_id" } };
         }
 
         const intentRef = db.collection("tranzila-payment-intents").doc(paymentId);
-        const intentSnap = await intentRef.get();
-        if (!intentSnap.exists) {
-            console.warn("[TRANZILA NOTIFY] unknown payment_id:", paymentId);
-            return { ok: false, status: 404, message: "unknown payment" };
-        }
-
-        const intent = intentSnap.data();
-        if (intent.status !== "pending") {
-            console.log("[TRANZILA NOTIFY] duplicate notify ignored:", paymentId, intent.status);
-            return { ok: true, status: 200, message: "already processed" };
-        }
-
-        await intentRef.update({
-            status: approved ? "approved" : "failed",
+        const tranzilaFields = {
             responseCode: responseCode || null,
             tranzilaTid: params.TranzilaTID ?? params.index ?? null,
             confirmationCode: params.ConfirmationCode ?? params.confirmation_code ?? null,
             notifyPayload: params,
-            processedAt: new Date(),
-        });
-
-        if (!approved) {
-            console.log("[TRANZILA NOTIFY] payment failed:", paymentId, "code:", responseCode);
-            return { ok: true, status: 200, message: "failure recorded" };
-        }
-
-        const { amount, status, createdAt, notifyPayload, processedAt, ...metadata } = intent;
-
-        // Same shape the Stripe webhook handlers expect
-        const paymentIntent = {
-            id: paymentId,
-            amount_received: amount, // cents, trusted from our stored intent — not the callback
-            created: Math.floor((createdAt?.toDate ? createdAt.toDate() : new Date()).getTime() / 1000),
-            metadata,
         };
 
-        // One notify URL for both flows, dispatched on the stored flowVersion exactly like the
-        // Stripe webhook does: v4 credits a family member, v2 credits the payer's own wallet/SIM.
-        const flowVersion = metadata.flowVersion || "v2";
+        const outcome = await db.runTransaction(async (tx) => {
+            const snap = await tx.get(intentRef);
+            if (!snap.exists) return { kind: "unknown" };
 
-        if (flowVersion === "v4") {
-            console.log("[TRANZILA NOTIFY] processing via v4 member flow:", paymentId);
-            await this.saveMemberStripeTransaction(paymentIntent, io);
-        } else {
-            console.log("[TRANZILA NOTIFY] processing via v2 flow:", paymentId);
-            await this.saveStripeTransaction(paymentIntent, io);
+            const intent = snap.data();
+            // "error" = a previous attempt failed mid-credit; allow Tranzila's retry to finish it.
+            if (!["pending", "error"].includes(intent.status)) return { kind: "duplicate", status: intent.status };
+
+            if (!approved) {
+                tx.update(intentRef, { ...tranzilaFields, status: "failed", processedAt: new Date() });
+                return { kind: "failed" };
+            }
+
+            const expectedSum = Number(intent.amount) / 100;
+            const paidSum = parseFloat(params.sum);
+            const expectedCurrency = String(intent.currency || process.env.TRANZILA_CURRENCY || "2");
+            const paidCurrency = params.currency != null ? String(params.currency) : expectedCurrency;
+            if (!Number.isFinite(paidSum) || Math.abs(paidSum - expectedSum) > 0.005 || paidCurrency !== expectedCurrency) {
+                tx.update(intentRef, {
+                    ...tranzilaFields, status: "amount_mismatch", processedAt: new Date(),
+                    mismatch: { expectedSum, paidSum: params.sum ?? null, expectedCurrency, paidCurrency },
+                });
+                return { kind: "mismatch", expectedSum, paidSum: params.sum, expectedCurrency, paidCurrency };
+            }
+
+            tx.update(intentRef, { ...tranzilaFields, status: "processing", processedAt: new Date() });
+            return { kind: "claimed", intent };
+        });
+
+        switch (outcome.kind) {
+            case "unknown":
+                console.warn("[TRANZILA WEBHOOK] unknown payment_id:", paymentId);
+                return { result: { ok: false, status: 404, message: "unknown payment" } };
+            case "duplicate":
+                console.log("[TRANZILA WEBHOOK] duplicate ignored:", paymentId, outcome.status);
+                return { result: { ok: true, status: 200, message: "already processed" } };
+            case "failed":
+                console.log("[TRANZILA WEBHOOK] payment failed:", paymentId, "code:", responseCode);
+                return { result: { ok: true, status: 200, message: "failure recorded" } };
+            case "mismatch":
+                console.error("🚨 [TRANZILA WEBHOOK] amount/currency mismatch — NOT credited:", paymentId, outcome);
+                logger.error("Tranzila amount mismatch", { paymentId, ...outcome });
+                return { result: { ok: true, status: 200, message: "amount mismatch recorded" } };
         }
 
-        return { ok: true, status: 200, message: "OK" };
+        const { amount, status, createdAt, notifyPayload, processedAt, currency, ...metadata } = outcome.intent;
+
+        // Same shape the Stripe webhook handlers expect
+        return {
+            paymentIntent: {
+                id: paymentId,
+                amount_received: amount, // cents, trusted from our stored intent — not the callback
+                created: Math.floor((createdAt?.toDate ? createdAt.toDate() : new Date()).getTime() / 1000),
+                metadata,
+            },
+        };
+    }
+
+    /** Credit a claimed Tranzila payment through the same pipelines as the Stripe webhook. */
+    async dispatchTranzilaPayment(paymentIntent, io) {
+        const { flowVersion = "v2" } = paymentIntent.metadata || {};
+        if (flowVersion === "v4") {
+            console.log("Processing via v4 flow");
+            await this.saveMemberStripeTransaction(paymentIntent, io);
+        } else {
+            console.log("Processing via v2 flow");
+            await this.saveStripeTransaction(paymentIntent, io);
+        }
+    }
+
+    async markTranzilaIntent(paymentId, status, error = null) {
+        await db.collection("tranzila-payment-intents").doc(paymentId)
+            .update({ status, ...(error && { error }), completedAt: new Date() })
+            .catch((e) => console.error("[TRANZILA WEBHOOK] could not mark intent", paymentId, status, e.message));
+    }
+
+    /** Read-only status for the success/cancel pages and app polling. */
+    async getTranzilaIntentStatus(paymentId) {
+        if (!paymentId) return null;
+        const snap = await db.collection("tranzila-payment-intents").doc(String(paymentId)).get();
+        if (!snap.exists) return null;
+        const i = snap.data();
+        return { paymentId: snap.id, status: i.status, amount: i.amount, currency: i.currency || null };
     }
 
     /**

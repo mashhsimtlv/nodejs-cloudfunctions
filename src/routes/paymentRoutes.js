@@ -7,7 +7,13 @@ router.post("/tranzila/create-intent", paymentController.createTranzilaPaymentIn
 // Tranzila mirror of the two Stripe intent endpoints; /tranzila/notify serves both flows,
 // dispatching on the flowVersion stored with the intent.
 router.post("/tranzila/create-member-intent", paymentController.createTranzilaMemberPaymentIntent);
-router.post("/tranzila/notify", express.urlencoded({ extended: true }), paymentController.handleTranzilaNotify);
+router.post("/tranzila/notify", express.urlencoded({ extended: true }), paymentController.handleTranzilaNotify); // legacy — intents created before /webhook
+// Tranzila webhook (notify_url_address) — same idea as /stripe/webhook.
+router.post("/tranzila/webhook", express.urlencoded({ extended: true }), paymentController.handleTranzilaWebhook);
+// Browser landing pages after the iframe (success_url_address / fail_url_address); Tranzila may GET or POST.
+router.all("/tranzila/success", express.urlencoded({ extended: true }), paymentController.tranzilaSuccess);
+router.all("/tranzila/cancel", express.urlencoded({ extended: true }), paymentController.tranzilaCancel);
+router.get("/tranzila/status/:paymentId", paymentController.getTranzilaPaymentStatus);
 // DEMO ONLY — no Firebase user required, fully isolated from the real payment
 // pipeline. See paymentService.createTranzilaDemoIntent.
 router.post("/tranzila/create-demo-intent", paymentController.createTranzilaDemoIntent);
