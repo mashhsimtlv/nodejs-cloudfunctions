@@ -28,6 +28,7 @@ build/
 Thumbs.db
 
 # VSCode / IDE settings
+.vscode/
 .idea/
 
 # Nodemon
