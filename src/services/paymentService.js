@@ -257,7 +257,9 @@ class PaymentService {
             trTextColor: "1f2937",
         });
 
-        return `https://direct.tranzila.com/${terminal}/iframenew.php?${params.toString()}`;
+        const terminalUrl = `https://direct.tranzila.com/${terminal}/iframenew.php?${params.toString()}`;
+        console.log(terminalUrl , "terminal Url");
+        return terminalUrl;
     }
 
     /**
