@@ -1,4 +1,5 @@
 const axios = require("axios");
+const { internalAuthHeaders } = require("../helpers/internalAuth");
 
 const API_BASE_URL = process.env.EVENTS_API_URL || "http://localhost:5000/events";
 
@@ -45,7 +46,7 @@ const gigaboostHistory = async (payload) => {
 // Transaction Created
 const transactionCreated = async (payload) => {
     try {
-        const { data } = await axios.post(`https://app-link.simtlv.co.il/api/transaction/save-transaction`, payload);
+        const { data } = await axios.post(`https://app-link.simtlv.co.il/api/transaction/save-transaction`, payload, { headers: internalAuthHeaders() });
         return data;
     } catch (err) {
         throw err.response?.data || err.message;

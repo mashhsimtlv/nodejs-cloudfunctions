@@ -1,6 +1,7 @@
 const subscriberService = require("../services/subscriberService");
 const logger = require("../helpers/logger");
 const axios = require("axios");
+const { internalAuthHeaders } = require("../helpers/internalAuth");
 const WooCommerceRestApi = require("@woocommerce/woocommerce-rest-api").default;
 const { Op } = require("sequelize");
 const {
@@ -431,7 +432,7 @@ exports.getAllConversation = async (req, res) => {
         const leadPayload = normalizeLeadPayload(gclidRecord, leadPhone);
         try {
             console.log(leadPayload, "lead payload to send to transaction api")
-            const statusCode = await postJson(endpoint, leadPayload);
+            const statusCode = await postJson(endpoint, leadPayload, internalAuthHeaders());
             if (!(statusCode >= 200 && statusCode < 300)) {
                 console.error("Transaction API returned non-2xx:", statusCode);
             }

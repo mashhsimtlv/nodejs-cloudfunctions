@@ -5,6 +5,7 @@ const { Timestamp } = require("../config/db");
 
 const { getPayPalAccessToken } = require("../config/paypal");
 const axios = require("axios");
+const { internalAuthHeaders } = require("../helpers/internalAuth");
 const logger = require("../helpers/logger"); // BetterStack logger
 const nodemailer = require("nodemailer");
 const Sequelize = require("sequelize");
@@ -993,7 +994,7 @@ class PaymentService {
                         await axios.post(
                             "https://app-link.simtlv.co.il/api/affiliates/get-payment-confirmation",
                             { device_id, amountUSD, ip, email: user?.email, user_id: userId, id: id },
-                            { headers: { "Content-Type": "application/json" } }
+                            { headers: internalAuthHeaders() }
                         );
                         console.log("Affiliate payment confirmation triggered:", device_id);
                     } catch (err) {
@@ -1949,7 +1950,7 @@ class PaymentService {
                     await axios.post(
                         "https://app-link.simtlv.co.il/api/affiliates/get-payment-confirmation",
                         { device_id, amountUSD, ip, email: payerUser?.email, user_id: payerId, id: id },
-                        { headers: { "Content-Type": "application/json" } }
+                        { headers: internalAuthHeaders() }
                     );
                     console.log("Affiliate payment confirmation triggered:", device_id);
                 } catch (err) {
@@ -3221,7 +3222,7 @@ class PaymentService {
                         await axios.post(
                             "https://app-link.simtlv.co.il/api/affiliates/get-payment-confirmation",
                             { device_id, amount, ip, email: user?.email, user_id: userId, id: transactionId },
-                            { headers: { "Content-Type": "application/json" } }
+                            { headers: internalAuthHeaders() }
                         );
                         console.log("Affiliate payment confirmation triggered:", device_id);
                     } catch (err) {
@@ -3853,7 +3854,7 @@ class PaymentService {
                         const response = await axios.post(
                             "https://app-link.simtlv.co.il/api/affiliates/get-payment-confirmation",
                             payload,
-                            { headers: { "Content-Type": "application/json" } }
+                            { headers: internalAuthHeaders() }
                         );
 
                         console.log(`✅ Affiliate confirmation for user ${userId}:`, response.data);
